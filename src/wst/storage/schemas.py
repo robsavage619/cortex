@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import duckdb
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 DDL_STATEMENTS = (
     """
@@ -13,29 +13,47 @@ DDL_STATEMENTS = (
     """,
     """
     CREATE TABLE IF NOT EXISTS theses (
-        id           VARCHAR   PRIMARY KEY,
-        tickers      VARCHAR[] NOT NULL,
-        author       VARCHAR   NOT NULL,
-        opened       DATE      NOT NULL,
-        conviction   INTEGER   NOT NULL,
-        claim        VARCHAR   NOT NULL,
-        falsifier    VARCHAR   NOT NULL,
-        reasoning    VARCHAR,
-        evidence     VARCHAR[],
-        review_date  DATE      NOT NULL,
-        status       VARCHAR   NOT NULL DEFAULT 'open',
-        entry_price  DOUBLE,
-        entry_date   DATE,
-        created_at   TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+        id               VARCHAR   PRIMARY KEY,
+        tickers          VARCHAR[] NOT NULL,
+        author           VARCHAR   NOT NULL,
+        opened           DATE      NOT NULL,
+        conviction       INTEGER   NOT NULL,
+        claim            VARCHAR   NOT NULL,
+        falsifier        VARCHAR   NOT NULL,
+        reasoning        VARCHAR,
+        evidence         VARCHAR[],
+        review_date      DATE      NOT NULL,
+        status           VARCHAR   NOT NULL DEFAULT 'open',
+        entry_price      DOUBLE,
+        entry_date       DATE,
+        base_rate        VARCHAR,
+        pre_mortem       VARCHAR,
+        change_my_mind   VARCHAR,
+        sizing_rationale VARCHAR,
+        why_now          VARCHAR,
+        activate_at      TIMESTAMP,
+        created_at       TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
     )
     """,
     """
     CREATE TABLE IF NOT EXISTS reviews (
-        thesis_id    VARCHAR   NOT NULL,
-        reviewed_on  DATE      NOT NULL,
-        outcome      VARCHAR   NOT NULL,
-        note         VARCHAR,
+        thesis_id        VARCHAR   NOT NULL,
+        reviewed_on      DATE      NOT NULL,
+        outcome          VARCHAR   NOT NULL,
+        decision_quality VARCHAR,
+        note             VARCHAR,
         PRIMARY KEY (thesis_id, reviewed_on)
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS dissents (
+        id          VARCHAR   PRIMARY KEY,
+        thesis_id   VARCHAR   NOT NULL,
+        author      VARCHAR   NOT NULL,
+        stance      VARCHAR   NOT NULL,
+        conviction  INTEGER,
+        note        VARCHAR,
+        created_at  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
     )
     """,
     """
@@ -51,10 +69,23 @@ DDL_STATEMENTS = (
     """,
 )
 
+# Idempotent column additions so pre-v2 databases upgrade in place.
+MIGRATION_STATEMENTS = (
+    "ALTER TABLE theses ADD COLUMN IF NOT EXISTS base_rate VARCHAR",
+    "ALTER TABLE theses ADD COLUMN IF NOT EXISTS pre_mortem VARCHAR",
+    "ALTER TABLE theses ADD COLUMN IF NOT EXISTS change_my_mind VARCHAR",
+    "ALTER TABLE theses ADD COLUMN IF NOT EXISTS sizing_rationale VARCHAR",
+    "ALTER TABLE theses ADD COLUMN IF NOT EXISTS why_now VARCHAR",
+    "ALTER TABLE theses ADD COLUMN IF NOT EXISTS activate_at TIMESTAMP",
+    "ALTER TABLE reviews ADD COLUMN IF NOT EXISTS decision_quality VARCHAR",
+)
+
 
 def apply_schema(conn: duckdb.DuckDBPyConnection) -> None:
-    """Create all tables and record the schema version if not already set."""
+    """Create all tables, run migrations, and record the schema version."""
     for ddl in DDL_STATEMENTS:
+        conn.execute(ddl)
+    for ddl in MIGRATION_STATEMENTS:
         conn.execute(ddl)
 
     row = conn.execute("SELECT MAX(version) FROM schema_version").fetchone()

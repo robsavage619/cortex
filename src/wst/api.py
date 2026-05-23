@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -42,6 +42,12 @@ class ThesisIn(BaseModel):
     evidence: list[str] = []
     entry_price: float | None = None
     entry_date: date | None = None
+    base_rate: str | None = None
+    pre_mortem: str | None = None
+    change_my_mind: str | None = None
+    sizing_rationale: str | None = None
+    why_now: str | None = None
+    cooling_off_hours: int | None = None
 
     @field_validator("conviction")
     @classmethod
@@ -61,8 +67,21 @@ class ThesisPatch(BaseModel):
 
 class ReviewIn(BaseModel):
     outcome: str
+    decision_quality: str | None = None
     note: str | None = None
     reviewed_on: date | None = None
+
+
+class DissentIn(BaseModel):
+    author: str
+    stance: str
+    conviction: int | None = None
+    note: str | None = None
+
+
+class PriorsIn(BaseModel):
+    query: str
+    k: int = 3
 
 
 def _thesis_out(t: th.Thesis) -> dict[str, Any]:
@@ -80,7 +99,25 @@ def _thesis_out(t: th.Thesis) -> dict[str, Any]:
         "status": t.status,
         "entry_price": t.entry_price,
         "entry_date": t.entry_date.isoformat() if t.entry_date else None,
+        "base_rate": t.base_rate,
+        "pre_mortem": t.pre_mortem,
+        "change_my_mind": t.change_my_mind,
+        "sizing_rationale": t.sizing_rationale,
+        "why_now": t.why_now,
+        "activate_at": t.activate_at.isoformat() if t.activate_at else None,
         "created_at": t.created_at.isoformat(),
+    }
+
+
+def _dissent_out(d: th.Dissent) -> dict[str, Any]:
+    return {
+        "id": d.id,
+        "thesis_id": d.thesis_id,
+        "author": d.author,
+        "stance": d.stance,
+        "conviction": d.conviction,
+        "note": d.note,
+        "created_at": d.created_at.isoformat(),
     }
 
 
@@ -101,13 +138,21 @@ def get_theses(author: str | None = None, status: str | None = None) -> dict[str
 def get_thesis(thesis_id: str) -> dict[str, Any]:
     try:
         t = th.get(thesis_id, db_path=_db())
+        dissents = th.list_dissents(thesis_id, db_path=_db())
     except th.ThesisError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    return {"banner": _BANNER, "thesis": _thesis_out(t)}
+    return {
+        "banner": _BANNER,
+        "thesis": _thesis_out(t),
+        "dissents": [_dissent_out(d) for d in dissents],
+    }
 
 
 @app.post("/theses", status_code=201)
 def post_thesis(body: ThesisIn) -> dict[str, Any]:
+    activate_at: datetime | None = None
+    if body.cooling_off_hours:
+        activate_at = datetime.now() + timedelta(hours=body.cooling_off_hours)
     try:
         t = th.create(
             tickers=body.tickers,
@@ -120,6 +165,12 @@ def post_thesis(body: ThesisIn) -> dict[str, Any]:
             evidence=body.evidence,
             entry_price=body.entry_price,
             entry_date=body.entry_date,
+            base_rate=body.base_rate,
+            pre_mortem=body.pre_mortem,
+            change_my_mind=body.change_my_mind,
+            sizing_rationale=body.sizing_rationale,
+            why_now=body.why_now,
+            activate_at=activate_at,
             db_path=_db(),
         )
     except th.ThesisError as exc:
@@ -152,6 +203,7 @@ def post_review(thesis_id: str, body: ReviewIn) -> dict[str, str]:
         th.record_review(
             thesis_id,
             outcome=body.outcome,
+            decision_quality=body.decision_quality,
             note=body.note,
             reviewed_on=body.reviewed_on,
             db_path=_db(),
@@ -160,6 +212,32 @@ def post_review(thesis_id: str, body: ReviewIn) -> dict[str, str]:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     _maybe_mirror()
     return {"status": "recorded"}
+
+
+@app.post("/theses/{thesis_id}/activate", status_code=200)
+def activate_thesis(thesis_id: str) -> dict[str, Any]:
+    try:
+        t = th.activate(thesis_id, db_path=_db())
+    except th.ThesisError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    _maybe_mirror()
+    return {"banner": _BANNER, "thesis": _thesis_out(t)}
+
+
+@app.post("/theses/{thesis_id}/dissents", status_code=201)
+def post_dissent(thesis_id: str, body: DissentIn) -> dict[str, Any]:
+    try:
+        d = th.add_dissent(
+            thesis_id,
+            author=body.author,
+            stance=body.stance,
+            conviction=body.conviction,
+            note=body.note,
+            db_path=_db(),
+        )
+    except th.ThesisError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {"banner": _BANNER, "dissent": _dissent_out(d)}
 
 
 @app.get("/review-queue")
@@ -175,6 +253,9 @@ def calibration() -> dict[str, Any]:
         "banner": _BANNER,
         "brier_score": report.brier_score,
         "overconfident": report.overconfident,
+        "process_score": report.process_score,
+        "decision_counts": report.decision_counts,
+        "trend": [{"date": p.date, "brier": p.brier} for p in report.trend],
         "buckets": [
             {
                 "conviction": b.conviction,
@@ -185,6 +266,49 @@ def calibration() -> dict[str, Any]:
             for b in report.buckets
         ],
         "per_author": report.per_author,
+    }
+
+
+@app.get("/digest")
+def digest() -> dict[str, Any]:
+    """Weekly-ritual digest: what's due, calibration drift, oldest unreviewed."""
+    db = _db()
+    due = rev.due_for_review(db_path=db)
+    open_theses = th.list_theses(status="open", db_path=db)
+    pending = th.list_theses(status="pending", db_path=db)
+    oldest = sorted(open_theses, key=lambda t: t.opened)[:3]
+    report = cal.compute(db_path=db)
+    return {
+        "banner": _BANNER,
+        "due": [_thesis_out(t) for t in due],
+        "pending": [_thesis_out(t) for t in pending],
+        "oldest_open": [_thesis_out(t) for t in oldest],
+        "open_count": len(open_theses),
+        "brier_score": report.brier_score,
+        "process_score": report.process_score,
+        "overconfident": report.overconfident,
+    }
+
+
+@app.post("/research/priors")
+def research_priors(body: PriorsIn) -> dict[str, Any]:
+    """Surface relevant research chunks for a claim at decision time."""
+    from wst.rag import retrieve
+
+    try:
+        chunks = retrieve(body.query, k=body.k, db_path=_db())
+    except Exception as exc:  # noqa: BLE001 - degrade visibly, never block writing
+        return {"banner": _BANNER, "priors": [], "error": str(exc)}
+    return {
+        "banner": _BANNER,
+        "priors": [
+            {
+                "wikilink": c.wikilink,
+                "tier": c.tier,
+                "text": c.text,
+            }
+            for c in chunks
+        ],
     }
 
 

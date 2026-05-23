@@ -97,3 +97,23 @@ def test_mixed_convictions_buckets(db):
     assert bucket4.total == 2
     assert bucket4.correct == 1
     assert bucket4.hit_rate == pytest.approx(0.5)
+
+
+def test_process_score_separates_decision_from_outcome(db):
+    # A losing bet graded as a good decision should lift the process score.
+    t = create(
+        tickers=["TST"],
+        author="rob",
+        conviction=4,
+        claim="c",
+        falsifier="f",
+        review_date=date(2026, 1, 1),
+        db_path=db,
+    )
+    update(t.id, status="invalidated", db_path=db)
+    record_review(t.id, outcome="wrong", decision_quality="good", db_path=db)
+
+    report = compute(db_path=db)
+    assert report.process_score == 1.0
+    assert report.decision_counts["good"] == 1
+    assert len(report.trend) == 1

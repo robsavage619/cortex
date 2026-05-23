@@ -1,12 +1,22 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime, timedelta
 
 import pytest
 
 from wst.storage.db import connect
 from wst.storage.schemas import apply_schema
-from wst.thesis import ThesisError, create, get, list_theses, record_review, update
+from wst.thesis import (
+    ThesisError,
+    activate,
+    add_dissent,
+    create,
+    get,
+    list_dissents,
+    list_theses,
+    record_review,
+    update,
+)
 
 
 @pytest.fixture()
@@ -144,3 +154,77 @@ def test_record_review_idempotent(db):
     t = _make(db)
     record_review(t.id, outcome="correct", reviewed_on=date(2026, 12, 1), db_path=db)
     record_review(t.id, outcome="wrong", reviewed_on=date(2026, 12, 1), db_path=db)
+
+
+# --- pre-commitment + cooling-off ---
+
+def test_precommitment_fields_persist(db):
+    t = _make(
+        db,
+        base_rate="~30% of margin-expansion calls work over 1y",
+        pre_mortem="Competition compresses pricing",
+        change_my_mind="Two quarters of flat services margin",
+        sizing_rationale="2% position, asymmetric upside",
+        why_now="Q3 print is the catalyst",
+    )
+    fetched = get(t.id, db_path=db)
+    assert fetched.base_rate.startswith("~30%")
+    assert fetched.pre_mortem == "Competition compresses pricing"
+    assert fetched.why_now == "Q3 print is the catalyst"
+
+
+def test_cooling_off_creates_pending(db):
+    future = datetime.now() + timedelta(hours=24)
+    t = _make(db, activate_at=future)
+    assert t.status == "pending"
+
+
+def test_activate_promotes_pending(db):
+    future = datetime.now() + timedelta(hours=24)
+    t = _make(db, activate_at=future)
+    activated = activate(t.id, db_path=db)
+    assert activated.status == "open"
+
+
+def test_activate_rejects_non_pending(db):
+    t = _make(db)
+    with pytest.raises(ThesisError, match="not pending"):
+        activate(t.id, db_path=db)
+
+
+# --- dual-grade review ---
+
+def test_record_review_with_decision_quality(db):
+    t = _make(db)
+    record_review(t.id, outcome="wrong", decision_quality="good", db_path=db)
+    with connect(db, read_only=True) as conn:
+        row = conn.execute(
+            "SELECT outcome, decision_quality FROM reviews WHERE thesis_id = ?",
+            [t.id],
+        ).fetchone()
+    assert row == ("wrong", "good")
+
+
+def test_record_review_invalid_decision_quality(db):
+    t = _make(db)
+    with pytest.raises(ThesisError, match="decision_quality"):
+        record_review(t.id, outcome="correct", decision_quality="great", db_path=db)
+
+
+# --- dissents ---
+
+def test_add_and_list_dissents(db):
+    t = _make(db)
+    add_dissent(
+        t.id, author="ari", stance="disagree", conviction=2, note="rich", db_path=db
+    )
+    dissents = list_dissents(t.id, db_path=db)
+    assert len(dissents) == 1
+    assert dissents[0].author == "ari"
+    assert dissents[0].stance == "disagree"
+
+
+def test_add_dissent_invalid_stance(db):
+    t = _make(db)
+    with pytest.raises(ThesisError, match="stance"):
+        add_dissent(t.id, author="ari", stance="meh", db_path=db)
