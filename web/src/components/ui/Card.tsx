@@ -1,18 +1,23 @@
-import type { HTMLAttributes } from 'react'
+import { motion } from 'framer-motion'
+import type { ComponentProps, HTMLAttributes } from 'react'
 
+import { spring } from '@/lib/motion'
 import { cn } from '@/lib/utils'
 
-interface CardProps extends HTMLAttributes<HTMLDivElement> {
+type MotionDivProps = ComponentProps<typeof motion.div>
+
+interface CardProps extends MotionDivProps {
   interactive?: boolean
 }
 
 export function Card({ className, interactive, ...props }: CardProps) {
   return (
-    <div
+    <motion.div
+      whileHover={interactive ? { y: -2 } : undefined}
+      transition={spring}
       className={cn(
-        'glass p-6 transition-all duration-200',
-        interactive &&
-          'cursor-pointer hover:bg-surface-raised hover:shadow-[0_8px_32px_rgba(0,0,0,0.4)] hover:border-white/[0.16]',
+        'glass p-5',
+        interactive && 'cursor-pointer hover:glass-raised',
         className,
       )}
       {...props}
@@ -25,13 +30,16 @@ export function CardHeader({ className, ...props }: HTMLAttributes<HTMLDivElemen
 }
 
 export function CardTitle({ className, ...props }: HTMLAttributes<HTMLHeadingElement>) {
-  return <h3 className={cn('text-lg font-semibold tracking-tight text-ink', className)} {...props} />
+  return <h3 className={cn('text-base font-semibold tracking-tight text-ink', className)} {...props} />
 }
 
 export function CardLabel({ className, ...props }: HTMLAttributes<HTMLParagraphElement>) {
   return (
     <p
-      className={cn('text-sm font-medium uppercase tracking-wide text-muted', className)}
+      className={cn(
+        'text-[11px] font-medium uppercase tracking-[0.08em] text-faint',
+        className,
+      )}
       {...props}
     />
   )

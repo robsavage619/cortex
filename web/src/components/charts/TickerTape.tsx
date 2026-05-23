@@ -1,6 +1,6 @@
 import { TrendingDown, TrendingUp } from 'lucide-react'
 
-import { useContext } from '@/lib/api'
+import { useTickerContext as useContext } from '@/lib/api'
 import { cn, fmtPrice, fmtSignedPercent } from '@/lib/utils'
 
 function TickerCell({ ticker }: { ticker: string }) {

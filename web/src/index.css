@@ -1,35 +1,59 @@
 @import 'tailwindcss';
+@import '@fontsource-variable/geist';
+@import '@fontsource-variable/geist-mono';
 
 @theme {
-  --color-bg: #0a0e1a;
-  --color-surface: rgba(255, 255, 255, 0.04);
-  --color-surface-raised: rgba(255, 255, 255, 0.06);
-  --color-hairline: rgba(255, 255, 255, 0.08);
+  /* ── Canvas ─────────────────────────────────────────── */
+  --color-bg:             #080b0f;
+  --color-bg-panel:       #0d1117;
+  --color-bg-row:         #0d1117;
+  --color-bg-row-alt:     #0b0e12;
+  --color-bg-hover:       #131a22;
+  --color-bg-selected:    #1a2230;
 
-  --color-accent-start: #22d3ee;
-  --color-accent-end: #8b5cf6;
-  --color-accent: #6366f1;
+  /* ── Borders ─────────────────────────────────────────── */
+  --color-border:         #1e2530;
+  --color-border-dim:     #161d26;
+  --color-border-bright:  #2a3545;
+  --color-hairline:       #1e2530;
+  --color-surface:        #0d1117;
+  --color-surface-raised: #131a22;
 
-  --color-up: #34d399;
-  --color-down: #f87171;
-  --color-warn: #fbbf24;
+  /* ── Terminal palette ────────────────────────────────── */
+  --color-up:             #4ade80;
+  --color-down:           #f87171;
+  --color-warn:           #fbbf24;
+  --color-amber:          #fbbf24;
+  --color-cyan:           #22d3ee;   /* brand / interactive only */
+  --color-open:           #38bdf8;   /* open-status data color   */
+  --color-accent:         #22d3ee;
 
-  --color-ink: #e5e9f0;
-  --color-muted: #8b93a7;
-  --color-faint: #5a6177;
+  /* ── Text ────────────────────────────────────────────── */
+  --color-ink:            #e2e8f0;
+  --color-muted:          #6b7280;   /* passes WCAG AA at 4.0:1  */
+  --color-faint:          #4b5563;   /* passes 3.0:1             */
 
-  --radius-card: 16px;
-  --radius-input: 12px;
+  /* ── Fonts ───────────────────────────────────────────── */
+  --font-sans: 'Geist Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'Geist Mono Variable', 'JetBrains Mono', ui-monospace, monospace;
 
-  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  /* ── Shape ───────────────────────────────────────────── */
+  --radius-sm:   2px;
+  --radius-md:   3px;
+  --radius-card: 3px;
 }
 
 @layer base {
+  * { box-sizing: border-box; }
+
   html {
     background-color: var(--color-bg);
     color: var(--color-ink);
     font-family: var(--font-sans);
+    font-size: 13px;
+    line-height: 1.5;
     -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
   }
 
   body {
@@ -38,30 +62,76 @@
     background-color: var(--color-bg);
   }
 
-  /* All numeric figures align in columns. */
-  .tabular {
+  #root {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* Tight scrollbars */
+  *::-webkit-scrollbar { width: 6px; height: 6px; }
+  *::-webkit-scrollbar-track { background: var(--color-bg); }
+  *::-webkit-scrollbar-thumb {
+    background: var(--color-border);
+    border-radius: 0;
+  }
+  *::-webkit-scrollbar-thumb:hover { background: var(--color-border-bright); }
+
+  ::selection { background: rgba(34, 211, 238, 0.18); }
+
+  /* Monospace numerics — prices, tickers, dates */
+  .num {
+    font-family: var(--font-mono);
     font-variant-numeric: tabular-nums;
+    font-feature-settings: 'ss01';
+    letter-spacing: 0.02em;
   }
 
-  ::selection {
-    background: rgba(139, 92, 246, 0.35);
+  /* All-caps section/column labels */
+  .label {
+    font-family: var(--font-sans);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--color-muted);
   }
 }
 
+/* ── Conviction bar (3-stop: low / mid / high) ──────────── */
+@utility conv-low  { background-color: var(--color-open);  opacity: 0.4; }
+@utility conv-mid  { background-color: var(--color-warn);  }
+@utility conv-high { background-color: var(--color-up);    }
+
+/* ── Accent utilities ────────────────────────────────────── */
 @utility accent-gradient {
-  background-image: linear-gradient(135deg, var(--color-accent-start), var(--color-accent-end));
+  background: linear-gradient(135deg, var(--color-cyan), var(--color-open));
 }
-
 @utility accent-text {
-  background-image: linear-gradient(135deg, var(--color-accent-start), var(--color-accent-end));
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
+  color: var(--color-cyan);
 }
 
-@utility glass {
-  background-color: var(--color-surface);
-  backdrop-filter: blur(16px);
-  border: 1px solid var(--color-hairline);
-  border-radius: var(--radius-card);
+/* ── Terminal panel surface ──────────────────────────────── */
+@utility terminal-panel {
+  background-color: var(--color-bg-panel);
+  border: 1px solid var(--color-border);
+}
+
+/* ── Price flash animation ───────────────────────────────── */
+@keyframes flash-up {
+  0%   { color: #ffffff; }
+  100% { color: var(--color-up); }
+}
+@keyframes flash-down {
+  0%   { color: #ffffff; }
+  100% { color: var(--color-down); }
+}
+.flash-up   { animation: flash-up   180ms ease-out forwards; }
+.flash-down { animation: flash-down 180ms ease-out forwards; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
 }
