@@ -1,10 +1,10 @@
 import { TrendingDown, TrendingUp } from 'lucide-react'
 
-import { useTickerContext as useContext } from '@/lib/api'
+import { useTickerContext } from '@/lib/api'
 import { cn, fmtPrice, fmtSignedPercent } from '@/lib/utils'
 
 function TickerCell({ ticker }: { ticker: string }) {
-  const { data, isLoading } = useContext(ticker)
+  const { data, isLoading } = useTickerContext(ticker)
   const change = data?.market?.day_change_percent ?? null
   const up = (change ?? 0) >= 0
 

@@ -1,6 +1,7 @@
 import { BarChart3, LayoutDashboard, ListChecks, PlusCircle } from 'lucide-react'
 import { NavLink, Outlet } from 'react-router-dom'
 
+import { SavageWordmark } from '@/components/ui/SavageLogo'
 import { cn } from '@/lib/utils'
 
 const nav = [
@@ -17,9 +18,8 @@ export function Layout() {
       {/* ── Top bar ──────────────────────────────────────────── */}
       <header className="flex h-10 shrink-0 items-center border-b border-border bg-bg-panel">
         {/* Brand */}
-        <div className="flex h-full items-center gap-2 border-r border-border px-4">
-          <span className="text-[10px] font-semibold tracking-[0.2em] text-cyan">WST</span>
-          <span className="text-[10px] tracking-widest text-muted">DECISION SYSTEM</span>
+        <div className="flex h-full items-center border-r border-border px-4">
+          <SavageWordmark />
         </div>
 
         {/* Nav tabs */}
