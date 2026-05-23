@@ -74,7 +74,9 @@ def fetch_senate_trades(
         response.raise_for_status()
         payload = response.json()
     except (httpx.HTTPError, ValueError) as exc:
-        raise CongressSourceError(f"Failed to fetch Senate trades from {url}: {exc}") from exc
+        raise CongressSourceError(
+            f"Failed to fetch Senate trades from {url}: {exc}"
+        ) from exc
     finally:
         if owns_client:
             client.close()

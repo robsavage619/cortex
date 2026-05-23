@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__Claude_Preview__preview_screenshot",
+      "mcp__firecrawl__firecrawl_scrape",
+      "mcp__firecrawl__firecrawl_search",
+      "Bash(curl -s *)",
+      "Bash(uv run ruff check *)",
+      "Bash(pdftotext *)"
+    ],
+    "deny": []
+  }
+}

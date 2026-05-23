@@ -4,7 +4,11 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-DEFAULT_VAULT_DIR = Path.home() / "Vault" / "savage_vault" / "wall-street"
+_PROJECT_ROOT = Path(__file__).parent.parent.parent
+DATA_DIR = _PROJECT_ROOT / "data"
+
+DEFAULT_DUCKDB_PATH = DATA_DIR / "duckdb" / "wst.db"
+DEFAULT_VAULT_DIR = Path.home() / "Vault" / "savage_vault" / "investing"
 
 
 def _load_dotenv(path: Path) -> None:
@@ -23,24 +27,36 @@ def _load_dotenv(path: Path) -> None:
 
 @dataclass(frozen=True)
 class Settings:
-    """Runtime configuration. API keys come from the environment / .env only."""
+    """Runtime configuration loaded from environment / .env only."""
 
+    duckdb_path: Path
     vault_dir: Path
-    financialdatasets_api_key: str | None
 
     @property
-    def watchlist_path(self) -> Path:
-        return self.vault_dir / "watchlist.yaml"
+    def investing_dir(self) -> Path:
+        return self.vault_dir
 
     @property
-    def dashboard_dir(self) -> Path:
-        return self.vault_dir / "dashboard"
+    def dashboard_path(self) -> Path:
+        return self.vault_dir / "dashboard.md"
 
 
-def load_settings(vault_dir: Path | None = None) -> Settings:
+def load_settings(
+    duckdb_path: Path | None = None,
+    vault_dir: Path | None = None,
+) -> Settings:
     _load_dotenv(Path.cwd() / ".env")
-    resolved = vault_dir or Path(os.environ.get("WST_VAULT_DIR", DEFAULT_VAULT_DIR))
-    return Settings(
-        vault_dir=resolved,
-        financialdatasets_api_key=os.environ.get("FINANCIAL_DATASETS_API_KEY"),
+
+    raw_db = os.environ.get("WST_DUCKDB_PATH", "")
+    if raw_db:
+        env_db = Path(raw_db)
+        if env_db.suffix != ".db":
+            raise ValueError(f"WST_DUCKDB_PATH must end in .db, got: {raw_db}")
+        resolved_db = env_db
+    else:
+        resolved_db = duckdb_path or DEFAULT_DUCKDB_PATH
+
+    resolved_vault = vault_dir or Path(
+        os.environ.get("WST_VAULT_DIR", DEFAULT_VAULT_DIR)
     )
+    return Settings(duckdb_path=resolved_db, vault_dir=resolved_vault)
