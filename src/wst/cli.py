@@ -93,8 +93,8 @@ def _cmd_rag_index(args: argparse.Namespace) -> None:  # noqa: ARG001
     from wst.rag import index_vault
 
     settings = load_settings()
-    n = index_vault(settings.vault_dir, db_path=settings.duckdb_path)
-    print(f"Indexed {n} chunks from {settings.vault_dir}")
+    n = index_vault(settings.research_dir, db_path=settings.duckdb_path)
+    print(f"Indexed {n} chunks from {settings.research_dir}")
 
 
 def _cmd_serve(args: argparse.Namespace) -> None:

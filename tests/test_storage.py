@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import duckdb
 import pytest
 
 from wst.storage.db import connect
@@ -80,6 +81,8 @@ def test_connect_read_only_raises_on_write(tmp_path):
     db = tmp_path / "test.db"
     with connect(db) as conn:
         apply_schema(conn)
-    with connect(db, read_only=True) as ro:
-        with pytest.raises(Exception):
-            ro.execute("INSERT INTO theses VALUES (NULL)")
+    with (
+        connect(db, read_only=True) as ro,
+        pytest.raises(duckdb.Error),
+    ):
+        ro.execute("INSERT INTO theses VALUES (NULL)")

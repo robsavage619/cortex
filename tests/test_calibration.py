@@ -29,7 +29,11 @@ def _seed(db, author: str, conviction: int, outcome: str) -> None:
         status="open",
         db_path=db,
     )
-    update(t.id, status="confirmed" if outcome == "correct" else "invalidated", db_path=db)
+    update(
+        t.id,
+        status="confirmed" if outcome == "correct" else "invalidated",
+        db_path=db,
+    )
     record_review(t.id, outcome=outcome, db_path=db)
 
 

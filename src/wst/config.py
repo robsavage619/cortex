@@ -31,6 +31,7 @@ class Settings:
 
     duckdb_path: Path
     vault_dir: Path
+    research_dir: Path
 
     @property
     def investing_dir(self) -> Path:
@@ -44,6 +45,7 @@ class Settings:
 def load_settings(
     duckdb_path: Path | None = None,
     vault_dir: Path | None = None,
+    research_dir: Path | None = None,
 ) -> Settings:
     _load_dotenv(Path.cwd() / ".env")
 
@@ -59,4 +61,15 @@ def load_settings(
     resolved_vault = vault_dir or Path(
         os.environ.get("WST_VAULT_DIR", DEFAULT_VAULT_DIR)
     )
-    return Settings(duckdb_path=resolved_db, vault_dir=resolved_vault)
+
+    raw_research = os.environ.get("WST_RESEARCH_DIR", "")
+    if raw_research:
+        resolved_research = Path(raw_research)
+    else:
+        resolved_research = research_dir or (resolved_vault / "research")
+
+    return Settings(
+        duckdb_path=resolved_db,
+        vault_dir=resolved_vault,
+        research_dir=resolved_research,
+    )

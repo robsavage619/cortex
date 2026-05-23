@@ -3,14 +3,22 @@ from __future__ import annotations
 import hashlib
 import logging
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Protocol, cast
 
 from wst.storage.db import connect
 from wst.storage.schemas import _load_vss
 
 logger = logging.getLogger(__name__)
+
+
+class Embedder(Protocol):
+    """Minimal embedding interface (matches fastembed's TextEmbedding)."""
+
+    def embed(self, texts: list[str]) -> Iterable[Iterable[float]]: ...
 
 _MODEL = "BAAI/bge-small-en-v1.5"
 _CHUNK_SIZE = 400
@@ -26,9 +34,10 @@ class Chunk:
     text: str
 
 
-def _get_embedder():
+def _get_embedder() -> Embedder:
     from fastembed import TextEmbedding
-    return TextEmbedding(model_name=_MODEL)
+
+    return cast(Embedder, TextEmbedding(model_name=_MODEL))
 
 
 def _chunk_text(
@@ -57,21 +66,44 @@ def _tier_from_path(note_path: Path) -> int | None:
     return int(match.group(1)) if match else None
 
 
-def index_vault(vault_dir: Path, *, db_path: Path | None = None) -> int:
-    """Embed all markdown notes in vault_dir into research_chunks.
+def index_vault(
+    vault_dir: Path,
+    *,
+    db_path: Path | None = None,
+    embedder: Embedder | None = None,
+) -> int:
+    """Embed all markdown notes under vault_dir into research_chunks.
 
-    Returns the number of chunks indexed.
+    Re-indexing is idempotent per source: every chunk row for a re-encountered
+    note_path is cleared before reinsertion, so shrinking or editing a note can
+    never leave orphan chunks behind.
+
+    Args:
+        vault_dir: Directory tree to scan recursively for ``*.md`` notes.
+        db_path: DuckDB path; defaults to the configured store.
+        embedder: Embedding backend; defaults to the local fastembed model.
+
+    Returns:
+        The number of chunks indexed.
     """
-    notes = list(vault_dir.rglob("*.md"))
+    if not vault_dir.is_dir():
+        logger.warning("Research dir does not exist: %s", vault_dir)
+        return 0
+
+    notes = sorted(vault_dir.rglob("*.md"))
     if not notes:
         logger.warning("No markdown notes found in %s", vault_dir)
         return 0
 
-    embedder = _get_embedder()
+    embedder = embedder or _get_embedder()
     chunks: list[tuple[str, str, str, int | None, str]] = []
 
     for note in notes:
-        text = note.read_text(encoding="utf-8", errors="ignore")
+        try:
+            text = note.read_text(encoding="utf-8")
+        except OSError as exc:
+            logger.error("Skipping unreadable note %s: %s", note, exc)
+            continue
         wikilink = _note_to_wikilink(note, vault_dir)
         tier = _tier_from_path(note)
         for idx, chunk_text in enumerate(_chunk_text(text)):
@@ -82,20 +114,29 @@ def index_vault(vault_dir: Path, *, db_path: Path | None = None) -> int:
         return 0
 
     texts = [c[4] for c in chunks]
-    embeddings = list(embedder.embed(texts))
+    embeddings = [list(emb) for emb in embedder.embed(texts)]
+    if len(embeddings) != len(chunks):
+        raise RuntimeError(
+            f"Embedder returned {len(embeddings)} vectors for {len(chunks)} chunks"
+        )
 
+    source_paths = sorted({c[1] for c in chunks})
     now = datetime.now(UTC)
     with connect(db_path) as conn:
         _load_vss(conn)
         conn.executemany(
+            "DELETE FROM research_chunks WHERE note_path = ?",
+            [(p,) for p in source_paths],
+        )
+        conn.executemany(
             """
-            INSERT OR REPLACE INTO research_chunks
+            INSERT INTO research_chunks
                 (id, note_path, wikilink, tier, text, embedding, indexed_at)
             VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
             [
-                (c[0], c[1], c[2], c[3], c[4], list(emb), now)
-                for c, emb in zip(chunks, embeddings, strict=False)
+                (c[0], c[1], c[2], c[3], c[4], emb, now)
+                for c, emb in zip(chunks, embeddings, strict=True)
             ],
         )
 
@@ -108,12 +149,13 @@ def retrieve(
     *,
     k: int = 5,
     db_path: Path | None = None,
+    embedder: Embedder | None = None,
 ) -> list[Chunk]:
     """Return the k most relevant research chunks for query.
 
     Falls back to an empty list if the VSS index is not built or no chunks exist.
     """
-    embedder = _get_embedder()
+    embedder = embedder or _get_embedder()
     query_vec = list(next(iter(embedder.embed([query]))))
 
     with connect(db_path, read_only=True) as conn:
