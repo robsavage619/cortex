@@ -235,6 +235,32 @@ def context(ticker: str) -> dict[str, Any]:
     return result
 
 
+@app.get("/context/{ticker}/history")
+def price_history(ticker: str, period: str = "6mo") -> dict[str, Any]:
+    from wst.sources.market import MarketSourceError, history_for
+
+    try:
+        bars = history_for(ticker, period=period)
+    except MarketSourceError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return {
+        "banner": _BANNER,
+        "ticker": ticker.upper(),
+        "period": period,
+        "bars": [
+            {
+                "date": b.date,
+                "open": b.open,
+                "high": b.high,
+                "low": b.low,
+                "close": b.close,
+                "volume": b.volume,
+            }
+            for b in bars
+        ],
+    }
+
+
 def _maybe_mirror() -> None:
     try:
         from wst.mirror import generate

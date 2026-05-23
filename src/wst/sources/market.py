@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -18,8 +19,72 @@ class PriceContext:
     news_headlines: list[str]
 
 
+@dataclass
+class PriceBar:
+    date: str
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: float
+
+
 class MarketSourceError(Exception):
     """Raised when yfinance data cannot be fetched or parsed."""
+
+
+_VALID_PERIODS = frozenset(
+    {"1mo", "3mo", "6mo", "1y", "2y", "5y", "ytd", "max"}
+)
+
+
+def history_for(ticker: str, *, period: str = "6mo") -> list[PriceBar]:
+    """Fetch daily OHLC history for ticker via yfinance (free, no key).
+
+    Args:
+        ticker: Symbol to fetch.
+        period: yfinance period window (e.g. ``6mo``, ``1y``).
+
+    Returns:
+        Daily price bars, oldest first. Empty if yfinance returns nothing.
+
+    Raises:
+        MarketSourceError: On an invalid period or a fetch/parse failure.
+    """
+    if period not in _VALID_PERIODS:
+        raise MarketSourceError(
+            f"Invalid period {period!r}; expected one of {sorted(_VALID_PERIODS)}"
+        )
+
+    try:
+        import yfinance as yf
+    except ImportError as exc:
+        raise MarketSourceError("yfinance is not installed") from exc
+
+    try:
+        frame = yf.Ticker(ticker).history(period=period, interval="1d")
+    except Exception as exc:
+        raise MarketSourceError(
+            f"yfinance history failed for {ticker}: {exc}"
+        ) from exc
+
+    bars: list[PriceBar] = []
+    for idx, row in frame.iterrows():
+        close = _as_float(row.get("Close"))
+        if close is None:
+            continue
+        ts: Any = idx
+        bars.append(
+            PriceBar(
+                date=ts.date().isoformat(),
+                open=_as_float(row.get("Open")) or close,
+                high=_as_float(row.get("High")) or close,
+                low=_as_float(row.get("Low")) or close,
+                close=close,
+                volume=_as_float(row.get("Volume")) or 0.0,
+            )
+        )
+    return bars
 
 
 def context_for(ticker: str, *, news_limit: int = 5) -> PriceContext:
