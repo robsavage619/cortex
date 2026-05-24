@@ -17,7 +17,7 @@ exponential backoff and polite inter-request delays so a transient blip or a
 rate-limit nudge doesn't sink a sync.
 
 This module scrapes; persistence and the API read from a DuckDB mirror so the
-live site is hit only by the ``wst congress-sync`` command, never per request.
+live site is hit only by the ``cortex congress-sync`` command, never per request.
 """
 
 from __future__ import annotations
@@ -434,7 +434,7 @@ def filter_trades(
 
 def store_trades(trades: list[CongressTrade], db_path: Path) -> int:
     """Upsert trades into congress_trades. Returns the count of new rows."""
-    from wst.storage.db import connect
+    from cortex.storage.db import connect
 
     if not trades:
         return 0
@@ -478,7 +478,7 @@ def list_trades(
     limit: int = 100,
 ) -> list[CongressTrade]:
     """Read trades from the DuckDB mirror, newest disclosure first."""
-    from wst.storage.db import connect
+    from cortex.storage.db import connect
 
     clauses: list[str] = []
     params: list[object] = []
@@ -557,7 +557,7 @@ def congress_stats(db_path: Path, *, days: int = 365) -> dict[str, Any]:
     """
     from collections import defaultdict
 
-    from wst.storage.db import connect
+    from cortex.storage.db import connect
 
     since = recent_window(days)
     with connect(db_path, read_only=True) as conn:

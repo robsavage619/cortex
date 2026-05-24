@@ -943,7 +943,7 @@ function ThesisTab({
           ) : (
             <p className="font-sans text-[11px] leading-relaxed text-muted">
               This ticker isn't in the current discovery run — likely fell below the 200-day trend gate or
-              the pre-filter. Run <code className="font-mono text-cyan">wst discover</code> to re-score the universe.
+              the pre-filter. Run <code className="font-mono text-cyan">cortex discover</code> to re-score the universe.
             </p>
           )}
         </div>
@@ -1090,7 +1090,7 @@ function CortexTab({
         <p className="max-w-md font-sans text-[12px] leading-relaxed text-muted">
           This ticker isn't in the latest CORTEX run — it either fell below the 200-day
           trend gate or didn't clear the pre-filter. Run{' '}
-          <code className="font-mono text-cyan">wst discover</code> to re-score the universe.
+          <code className="font-mono text-cyan">cortex discover</code> to re-score the universe.
         </p>
       </div>
     )
@@ -1284,7 +1284,7 @@ function CaseTab({ ticker }: { ticker: string }) {
         <span className="num text-sm text-muted">NO CASE AVAILABLE</span>
         <p className="max-w-md font-sans text-[12px] leading-relaxed text-faint">
           {ticker} isn't in the latest CORTEX discovery run, so there's no
-          auto-built case. Run <code className="font-mono text-cyan">wst discover</code> to score it.
+          auto-built case. Run <code className="font-mono text-cyan">cortex discover</code> to score it.
         </p>
       </div>
     )

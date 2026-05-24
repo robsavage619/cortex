@@ -11,7 +11,7 @@ import logging
 from dataclasses import dataclass
 from pathlib import Path
 
-from wst.discovery import Candidate, list_candidates
+from cortex.discovery import Candidate, list_candidates
 
 log = logging.getLogger(__name__)
 
@@ -220,7 +220,7 @@ def build_case(
     # Optional vault citation per factor (one snippet each).
     research: dict[str, tuple[str, str] | None] = {}
     if with_research:
-        from wst.rag import retrieve
+        from cortex.rag import retrieve
 
         for factor, meta in _FACTOR_META.items():
             try:

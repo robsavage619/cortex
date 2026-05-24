@@ -29,7 +29,7 @@ from pathlib import Path
 
 import requests
 
-from wst.config import sec_user_agent
+from cortex.config import sec_user_agent
 
 log = logging.getLogger(__name__)
 
@@ -263,7 +263,7 @@ def fetch_insider_buys_incremental(
     _set_identity()
     import edgar
 
-    from wst.storage.db import connect
+    from cortex.storage.db import connect
 
     cik_ticker = _fetch_cik_ticker_map()
     ticker_cik = _ticker_to_cik(cik_ticker)
@@ -712,7 +712,7 @@ def fetch_insider_buys_bulk_index(
     print(f"Primary doc map: {len(acc_to_doc):,} Form 4 entries", flush=True)
 
     # Load already-stored (cik, acc_no) pairs to skip on resume
-    from wst.storage.db import connect
+    from cortex.storage.db import connect
 
     with connect(db_path, read_only=True) as conn:
         done = conn.execute(
@@ -821,7 +821,7 @@ def fetch_insider_buys_bulk_index(
 
 def store_insider_buys(events: list[InsiderBuyEvent], db_path: Path) -> int:
     """Upsert insider buy events into insider_buys. Returns new-row count."""
-    from wst.storage.db import connect
+    from cortex.storage.db import connect
 
     if not events:
         return 0
@@ -865,7 +865,7 @@ def list_insider_buys(
     limit: int = 100,
 ) -> list[InsiderBuyEvent]:
     """Read insider buy events from DB, most recent first."""
-    from wst.storage.db import connect
+    from cortex.storage.db import connect
 
     clauses: list[str] = []
     params: list[object] = []

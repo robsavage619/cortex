@@ -4,7 +4,7 @@ import datetime as dt
 
 import numpy as np
 
-from wst.backtest import (
+from cortex.backtest import (
     _amount_midpoint,
     _congress_sign,
     _Fundamental,

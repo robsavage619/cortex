@@ -12,14 +12,14 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, field_validator
 
-import wst.calibration as cal
-import wst.cases as cases
-import wst.discovery as discovery
-import wst.review as rev
-import wst.thesis as th
-from wst.config import load_settings
-from wst.storage.db import connect
-from wst.storage.schemas import apply_schema
+import cortex.calibration as cal
+import cortex.cases as cases
+import cortex.discovery as discovery
+import cortex.review as rev
+import cortex.thesis as th
+from cortex.config import load_settings
+from cortex.storage.db import connect
+from cortex.storage.schemas import apply_schema
 
 log = logging.getLogger(__name__)
 
@@ -35,7 +35,7 @@ def _apply_schema_on_startup() -> None:
 
 _apply_schema_on_startup()
 
-app = FastAPI(title="WST — Wall Street Tracker", version="0.1.0")
+app = FastAPI(title="CORTEX — factor research platform", version="0.1.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -67,8 +67,8 @@ _refresh_state: dict[str, Any] = {
 
 
 def _run_refresh() -> None:
-    from wst.discovery import run_discovery
-    from wst.sources.congress import fetch_senate_trades, recent_window, store_trades
+    from cortex.discovery import run_discovery
+    from cortex.sources.congress import fetch_senate_trades, recent_window, store_trades
 
     try:
         db = _db()
@@ -84,7 +84,7 @@ def _run_refresh() -> None:
 
         try:
             _refresh_state["steps"]["funds"] = "running"
-            from wst.sources.funds import sync_all_managers
+            from cortex.sources.funds import sync_all_managers
 
             new_funds = sync_all_managers(db)
             _refresh_state["steps"]["funds"] = f"done — {new_funds} new moves"
@@ -103,7 +103,7 @@ def _run_refresh() -> None:
 
         try:
             _refresh_state["steps"]["volatility"] = "running"
-            from wst.volatility_screen import run_volatility_screen
+            from cortex.volatility_screen import run_volatility_screen
 
             vol = run_volatility_screen(db)
             _refresh_state["steps"]["volatility"] = f"done — {len(vol)} stocks"
@@ -457,7 +457,7 @@ def digest() -> dict[str, Any]:
 @app.post("/research/priors")
 def research_priors(body: PriorsIn) -> dict[str, Any]:
     """Surface relevant research chunks for a claim at decision time."""
-    from wst.rag import retrieve
+    from cortex.rag import retrieve
 
     try:
         chunks = retrieve(body.query, k=body.k, db_path=_db())
@@ -478,9 +478,9 @@ def research_priors(body: PriorsIn) -> dict[str, Any]:
 
 @app.get("/context/{ticker}")
 def context(ticker: str) -> dict[str, Any]:
-    from wst.sources.congress import list_trades, recent_window
-    from wst.sources.market import MarketSourceError
-    from wst.sources.market import context_for as market_ctx
+    from cortex.sources.congress import list_trades, recent_window
+    from cortex.sources.market import MarketSourceError
+    from cortex.sources.market import context_for as market_ctx
 
     result: dict[str, Any] = {"banner": _BANNER, "ticker": ticker.upper()}
 
@@ -524,7 +524,7 @@ def context(ticker: str) -> dict[str, Any]:
 
 @app.get("/context/{ticker}/history")
 def price_history(ticker: str, period: str = "6mo") -> dict[str, Any]:
-    from wst.sources.market import MarketSourceError, history_for
+    from cortex.sources.market import MarketSourceError, history_for
 
     try:
         bars = history_for(ticker, period=period)
@@ -551,7 +551,7 @@ def price_history(ticker: str, period: str = "6mo") -> dict[str, Any]:
 @app.get("/congress/stats")
 def get_congress_stats(days: int = 365) -> dict[str, Any]:
     """Aggregated Senate-trade analytics over a trailing window."""
-    from wst.sources.congress import congress_stats
+    from cortex.sources.congress import congress_stats
 
     return {"banner": _BANNER, "days": days, **congress_stats(_db(), days=days)}
 
@@ -560,8 +560,8 @@ def get_congress_stats(days: int = 365) -> dict[str, Any]:
 def get_congress(
     ticker: str | None = None, days: int = 120, limit: int = 100
 ) -> dict[str, Any]:
-    """Recent Senate trades from the local mirror (populated by `wst congress-sync`)."""
-    from wst.sources.congress import list_trades, recent_window
+    """Recent Senate trades from the local mirror (populated by `cortex congress-sync`)."""
+    from cortex.sources.congress import list_trades, recent_window
 
     trades = list_trades(
         _db(), ticker=ticker, since=recent_window(days), limit=limit
@@ -594,8 +594,8 @@ def get_congress(
 def get_funds(
     ticker: str | None = None, actions: str = "NEW,ADD", limit: int = 100
 ) -> dict[str, Any]:
-    """Institutional 13F moves from the local mirror (`wst funds-sync`)."""
-    from wst.sources.funds import list_fund_moves
+    """Institutional 13F moves from the local mirror (`cortex funds-sync`)."""
+    from cortex.sources.funds import list_fund_moves
 
     action_tuple = tuple(a.strip().upper() for a in actions.split(",") if a.strip())
     moves = list_fund_moves(
@@ -636,7 +636,7 @@ def get_candidates() -> dict[str, Any]:
 @app.get("/screen/volatility")
 def get_volatility_screen() -> dict[str, Any]:
     """The swing screen — stocks with large, consistent daily dollar swings."""
-    from wst.volatility_screen import list_volatility_screen
+    from cortex.volatility_screen import list_volatility_screen
 
     stocks = list_volatility_screen(_db())
     return {
@@ -721,7 +721,7 @@ def research_ticker(ticker: str, k: int = 2) -> dict[str, Any]:
     Returns one short research snippet per factor (momentum, low-vol, sharpe,
     value, quality) drawn from the indexed wiki via semantic retrieval.
     """
-    from wst.rag import retrieve
+    from cortex.rag import retrieve
 
     by_factor: dict[str, list[dict[str, Any]]] = {}
     error: str | None = None
@@ -750,8 +750,8 @@ def generate_reasoning(ticker: str) -> dict[str, Any]:
     import shutil
     import subprocess
 
-    from wst.sources.market import MarketSourceError
-    from wst.sources.market import context_for as market_ctx
+    from cortex.sources.market import MarketSourceError
+    from cortex.sources.market import context_for as market_ctx
 
     tk = ticker.upper()
 
@@ -822,12 +822,12 @@ Return ONLY a JSON object with exactly these keys. Each value is 1-2 sentences m
   "quality_factor": "what ROE says about capital efficiency"
 }}"""
 
-    # Locate the claude binary: PATH first, then an explicit WST_CLAUDE_BIN override.
+    # Locate the claude binary: PATH first, then an explicit CORTEX_CLAUDE_BIN override.
     claude_bin = shutil.which("claude")
     if claude_bin is None:
         import os
 
-        override = os.environ.get("WST_CLAUDE_BIN", "")
+        override = os.environ.get("CORTEX_CLAUDE_BIN", "")
         if override and Path(override).exists():
             claude_bin = override
 
@@ -884,7 +884,7 @@ Return ONLY a JSON object with exactly these keys. Each value is 1-2 sentences m
 
 def _maybe_mirror() -> None:
     try:
-        from wst.mirror import generate
+        from cortex.mirror import generate
         settings = load_settings()
         generate(settings.vault_dir, db_path=settings.duckdb_path)
     except Exception:

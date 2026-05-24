@@ -28,7 +28,7 @@ def _wiki_tickers(url: str, table_id: str) -> list[str]:
 
     resp = requests.get(
         url,
-        headers={"User-Agent": "Mozilla/5.0 (compatible; wst-universe-fetch/1.0)"},
+        headers={"User-Agent": "Mozilla/5.0 (compatible; cortex-universe-fetch/1.0)"},
         timeout=15,
     )
     resp.raise_for_status()

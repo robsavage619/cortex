@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
 
-from wst.storage.db import connect
+from cortex.storage.db import connect
 
 VALID_STATUSES = {"pending", "open", "confirmed", "invalidated", "closed"}
 VALID_OUTCOMES = {"correct", "wrong", "unclear"}

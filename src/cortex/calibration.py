@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 
-from wst.storage.db import connect
+from cortex.storage.db import connect
 
 MIN_RELIABLE_SAMPLE = 5
 """Buckets below this many reviewed outcomes are statistical noise."""

@@ -8,10 +8,10 @@ All notable changes to this project are documented here. The format is based on
 
 ### Security
 - Removed all hardcoded personal contact details from source. The SEC EDGAR
-  `User-Agent` / identity is now read from `WST_SEC_USER_AGENT` via a single helper,
+  `User-Agent` / identity is now read from `CORTEX_SEC_USER_AGENT` via a single helper,
   with a generic placeholder default.
 - Removed a hardcoded, machine-specific absolute path from the LLM-analysis code path;
-  the `claude` binary is now resolved from `PATH` with an optional `WST_CLAUDE_BIN`
+  the `claude` binary is now resolved from `PATH` with an optional `CORTEX_CLAUDE_BIN`
   override.
 
 ### Added
@@ -49,7 +49,7 @@ and the React portal.
   and Recharts.
 - **Design system** — `DESIGN.md`, a locked anti-action-bias visual contract
   (tokens, components, motion) that all generated UI adheres to.
-- **CLI** — `wst` entrypoint covering database init, data syncs/backfills, discovery,
+- **CLI** — `cortex` entrypoint covering database init, data syncs/backfills, discovery,
   screens, backtests, calibration, the RAG index, the vault mirror, and `serve`.
 - **Storage** — DuckDB columnar store with a schema-version migration table and a
   context-managed connection helper.

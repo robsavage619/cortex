@@ -4,9 +4,9 @@ from datetime import date, datetime, timedelta
 
 import pytest
 
-from wst.storage.db import connect
-from wst.storage.schemas import apply_schema
-from wst.thesis import (
+from cortex.storage.db import connect
+from cortex.storage.schemas import apply_schema
+from cortex.thesis import (
     ThesisError,
     activate,
     add_dissent,

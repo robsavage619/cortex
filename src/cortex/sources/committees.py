@@ -23,7 +23,7 @@ import json
 import logging
 import urllib.request
 
-from wst.config import sec_user_agent
+from cortex.config import sec_user_agent
 
 log = logging.getLogger(__name__)
 

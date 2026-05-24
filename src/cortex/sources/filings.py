@@ -4,11 +4,11 @@ import contextlib
 import logging
 from dataclasses import dataclass, field
 
-from wst.config import sec_user_agent
+from cortex.config import sec_user_agent
 
 logger = logging.getLogger(__name__)
 
-# SEC fair-access requires a descriptive User-Agent; set via WST_SEC_USER_AGENT.
+# SEC fair-access requires a descriptive User-Agent; set via CORTEX_SEC_USER_AGENT.
 _USER_AGENT = sec_user_agent()
 
 

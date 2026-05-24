@@ -5,7 +5,7 @@ import types
 
 import pytest
 
-from wst.sources.market import MarketSourceError, history_for
+from cortex.sources.market import MarketSourceError, history_for
 
 
 def test_history_rejects_invalid_period():

@@ -7,7 +7,7 @@ from pathlib import Path
 
 import duckdb
 
-from wst.config import DEFAULT_DUCKDB_PATH
+from cortex.config import DEFAULT_DUCKDB_PATH
 
 _OPEN_ATTEMPTS = 6
 _OPEN_BACKOFF = 0.15  # seconds, multiplied by attempt number

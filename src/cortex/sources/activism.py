@@ -29,7 +29,7 @@ from pathlib import Path
 
 import requests
 
-from wst.config import sec_user_agent
+from cortex.config import sec_user_agent
 
 log = logging.getLogger(__name__)
 
@@ -171,7 +171,7 @@ def fetch_activism_events(
 
 def store_activism_events(events: list[ActivistEvent], db_path: Path) -> int:
     """Upsert activism events into activist_stakes. Returns new-row count."""
-    from wst.storage.db import connect
+    from cortex.storage.db import connect
 
     if not events:
         return 0
@@ -198,7 +198,7 @@ def list_activism_events(
     db_path: Path, *, ticker: str | None = None, limit: int = 100
 ) -> list[ActivistEvent]:
     """Read activism events from the DB, most recent first."""
-    from wst.storage.db import connect
+    from cortex.storage.db import connect
 
     clauses: list[str] = []
     params: list[object] = []

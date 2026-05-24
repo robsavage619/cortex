@@ -186,7 +186,7 @@ def _fetch_fundamentals(tickers: list[str]) -> dict[str, dict[str, Any]]:
 
 def _store_candidates(candidates: list[Candidate], db_path: Path) -> None:
     """Atomically replace the candidates table contents."""
-    from wst.storage.db import connect
+    from cortex.storage.db import connect
 
     with connect(db_path) as conn:
         conn.execute("DELETE FROM candidates")
@@ -228,7 +228,7 @@ def _store_candidates(candidates: list[Candidate], db_path: Path) -> None:
 
 def list_candidates(db_path: Path) -> list[Candidate]:
     """Load all candidates from the DB ordered by composite_rank."""
-    from wst.storage.db import connect
+    from cortex.storage.db import connect
 
     with connect(db_path, read_only=True) as conn:
         rows = conn.execute(
@@ -287,7 +287,7 @@ def run_discovery(
         7. Compute full 6-factor composite; rank; keep top `top_n`
         8. Persist results to DB (DELETE + re-INSERT)
     """
-    from wst.sources.universe import sp500_tickers
+    from cortex.sources.universe import sp500_tickers
 
     as_of = date.today()
     now = datetime.now(tz=UTC)

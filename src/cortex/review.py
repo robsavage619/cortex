@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date
 from pathlib import Path
 
-from wst.thesis import Thesis, list_theses
+from cortex.thesis import Thesis, list_theses
 
 
 def due_for_review(

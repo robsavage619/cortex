@@ -3,8 +3,8 @@ from __future__ import annotations
 import duckdb
 import pytest
 
-from wst.storage.db import connect
-from wst.storage.schemas import SCHEMA_VERSION, apply_schema
+from cortex.storage.db import connect
+from cortex.storage.schemas import SCHEMA_VERSION, apply_schema
 
 
 def test_connect_creates_db(tmp_path):

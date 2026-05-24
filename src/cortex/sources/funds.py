@@ -19,7 +19,7 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
-from wst.config import sec_user_agent
+from cortex.config import sec_user_agent
 
 log = logging.getLogger(__name__)
 
@@ -273,7 +273,7 @@ def sync_all_managers(db_path: Path, *, historical: bool = False) -> int:
 
 def store_fund_moves(moves: list[FundMove], db_path: Path) -> int:
     """Upsert moves into fund_holdings. Returns the count of new rows."""
-    from wst.storage.db import connect
+    from cortex.storage.db import connect
 
     if not moves:
         return 0
@@ -326,7 +326,7 @@ def list_fund_moves(
 
     Defaults to buy-side actions (NEW/ADD) for the "smart money buys" view.
     """
-    from wst.storage.db import connect
+    from cortex.storage.db import connect
 
     clauses: list[str] = []
     params: list[object] = []

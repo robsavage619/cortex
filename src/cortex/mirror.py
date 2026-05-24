@@ -4,7 +4,7 @@ import logging
 from datetime import date
 from pathlib import Path
 
-from wst.thesis import Thesis, list_theses
+from cortex.thesis import Thesis, list_theses
 
 logger = logging.getLogger(__name__)
 
@@ -77,7 +77,7 @@ def _dashboard_note(theses: list[Thesis], generated_on: date) -> str:
 
     return f"""{_BANNER}
 
-# WST Dashboard
+# CORTEX Dashboard
 _Generated {generated_on}_
 
 ## Open theses ({len(open_t)})

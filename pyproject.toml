@@ -3,9 +3,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "wst"
+name = "cortex"
 version = "0.1.0"
-description = "Savage Wall Street Tracker — shared market hub: daily vault dashboard from market + congressional-trade data"
+description = "CORTEX — a single-operator quantitative factor-research platform"
 readme = "README.md"
 requires-python = ">=3.12"
 authors = [
@@ -33,10 +33,10 @@ dev = [
 ]
 
 [project.scripts]
-wst = "wst.cli:main"
+cortex = "cortex.cli:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/wst"]
+packages = ["src/cortex"]
 
 [tool.ruff]
 line-length = 88

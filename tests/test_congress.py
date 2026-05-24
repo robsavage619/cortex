@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import datetime as dt
 
-from wst.sources.congress import (
+from cortex.sources.congress import (
     CongressTrade,
     _clean_filer,
     _parse_date,

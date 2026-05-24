@@ -723,7 +723,7 @@ function CongressSection() {
       ) : trades.length === 0 ? (
         <div className="border-b border-border px-5 py-5">
           <span className="num text-[11px] text-faint">
-            No filings yet — run <code className="font-mono text-cyan">wst congress-sync</code> or hit SYNC DATA
+            No filings yet — run <code className="font-mono text-cyan">cortex congress-sync</code> or hit SYNC DATA
           </span>
         </div>
       ) : (
@@ -807,7 +807,7 @@ function SmartMoneySection() {
       ) : moves.length === 0 ? (
         <div className="border-b border-border px-5 py-5">
           <span className="num text-[11px] text-faint">
-            No fund data yet — run <code className="font-mono text-cyan">wst funds-sync</code> or hit SYNC DATA
+            No fund data yet — run <code className="font-mono text-cyan">cortex funds-sync</code> or hit SYNC DATA
           </span>
         </div>
       ) : (
@@ -989,14 +989,14 @@ export function Dashboard() {
           <SectionHeader
             icon={IconDiscovered}
             label="DISCOVERED"
-            sub={lastRun ? `last run ${new Date(lastRun).toLocaleDateString()}` : 'run wst discover to populate'}
+            sub={lastRun ? `last run ${new Date(lastRun).toLocaleDateString()}` : 'run cortex discover to populate'}
             count={candidates.length}
             tone="watch"
           />
           {candidates.length === 0 ? (
             <div className="flex items-center gap-3 border-b border-border px-5 py-5">
               <span className="num text-[11px] text-faint">
-                No candidates — run <code className="font-mono text-cyan">wst discover</code> to screen the S&amp;P 500
+                No candidates — run <code className="font-mono text-cyan">cortex discover</code> to screen the S&amp;P 500
               </span>
             </div>
           ) : (

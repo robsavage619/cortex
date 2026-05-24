@@ -19,7 +19,7 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
-from wst.config import sec_user_agent
+from cortex.config import sec_user_agent
 
 log = logging.getLogger(__name__)
 
@@ -124,7 +124,7 @@ def sync_universe_fundamentals(
     progress: bool = True,
 ) -> int:
     """Fetch + store annual fundamentals for the whole universe. New-row count."""
-    from wst.sources.universe import sp500_tickers
+    from cortex.sources.universe import sp500_tickers
 
     universe = tickers or sp500_tickers()
     total_new = 0
@@ -143,7 +143,7 @@ def sync_universe_fundamentals(
 # ── persistence ──────────────────────────────────────────────────────────────
 
 def store_fundamentals(points: list[FundamentalPoint], db_path: Path) -> int:
-    from wst.storage.db import connect
+    from cortex.storage.db import connect
 
     if not points:
         return 0
@@ -180,7 +180,7 @@ def store_fundamentals(points: list[FundamentalPoint], db_path: Path) -> int:
 
 def list_fundamentals(db_path: Path) -> list[FundamentalPoint]:
     """All stored fundamental points, oldest filing first."""
-    from wst.storage.db import connect
+    from cortex.storage.db import connect
 
     with connect(db_path, read_only=True) as conn:
         rows = conn.execute(

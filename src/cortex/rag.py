@@ -9,8 +9,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Protocol, cast
 
-from wst.storage.db import connect
-from wst.storage.schemas import _load_vss
+from cortex.storage.db import connect
+from cortex.storage.schemas import _load_vss
 
 logger = logging.getLogger(__name__)
 

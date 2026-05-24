@@ -4,10 +4,10 @@ from datetime import date
 
 import pytest
 
-from wst.calibration import compute
-from wst.storage.db import connect
-from wst.storage.schemas import apply_schema
-from wst.thesis import create, record_review, update
+from cortex.calibration import compute
+from cortex.storage.db import connect
+from cortex.storage.schemas import apply_schema
+from cortex.thesis import create, record_review, update
 
 
 @pytest.fixture()

@@ -1,4 +1,4 @@
-# WST Portal — Design System (Glass Premium)
+# CORTEX Portal — Design System (Glass Premium)
 
 The visual contract for the `web/` React portal. Any agent generating UI for this
 project reads this file first. Tokens are **locked** — do not invent new colors,

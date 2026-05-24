@@ -1,4 +1,4 @@
-# WST Handoff — 2026-05-22
+# CORTEX Handoff — 2026-05-22
 
 ## What this project is
 Savage Wall Street Tracker — a household investment **decision quality system** (not a signal feed).
@@ -8,33 +8,33 @@ DuckDB canonical store, FastAPI backend, React portal (glass-premium), vault mar
 ## Current state — all 42 tests passing
 
 ### Done this session
-- `src/wst/storage/db.py` — `@contextmanager connect(path, read_only)`
-- `src/wst/storage/schemas.py` — `apply_schema()`, DDL for `schema_version`, `theses`, `reviews`, `research_chunks`
-- `src/wst/config.py` — refactored: `DUCKDB_PATH`, `WST_DUCKDB_PATH` env override, removed `financialdatasets_api_key`
-- `src/wst/thesis.py` — CRUD (`create`, `get`, `list_theses`, `update`, `record_review`) + `ThesisError`
-- `src/wst/calibration.py` — Brier score + hit-rate buckets via sklearn
-- `src/wst/review.py` — `due_for_review(today)` returns open theses past review_date
-- `src/wst/rag.py` — chunking, embedding (fastembed bge-small), DuckDB VSS HNSW index, `retrieve(query, k)`
-- `src/wst/sources/market.py` — yfinance `context_for(ticker)` → `PriceContext`
-- `src/wst/sources/filings.py` — edgartools `context_for(ticker)` → `FilingsContext`
-- `src/wst/mirror.py` — `generate(vault_dir)` writes per-thesis notes + `dashboard.md`
-- `src/wst/api.py` — FastAPI: `GET/POST /theses`, `PATCH /theses/{id}`, `POST /theses/{id}/review`, `GET /review-queue`, `GET /calibration`, `GET /context/{ticker}`
-- `src/wst/cli.py` — `db-init`, `new`, `review`, `calibration`, `mirror`, `rag-index`, `serve`
+- `src/cortex/storage/db.py` — `@contextmanager connect(path, read_only)`
+- `src/cortex/storage/schemas.py` — `apply_schema()`, DDL for `schema_version`, `theses`, `reviews`, `research_chunks`
+- `src/cortex/config.py` — refactored: `DUCKDB_PATH`, `CORTEX_DUCKDB_PATH` env override, removed `financialdatasets_api_key`
+- `src/cortex/thesis.py` — CRUD (`create`, `get`, `list_theses`, `update`, `record_review`) + `ThesisError`
+- `src/cortex/calibration.py` — Brier score + hit-rate buckets via sklearn
+- `src/cortex/review.py` — `due_for_review(today)` returns open theses past review_date
+- `src/cortex/rag.py` — chunking, embedding (fastembed bge-small), DuckDB VSS HNSW index, `retrieve(query, k)`
+- `src/cortex/sources/market.py` — yfinance `context_for(ticker)` → `PriceContext`
+- `src/cortex/sources/filings.py` — edgartools `context_for(ticker)` → `FilingsContext`
+- `src/cortex/mirror.py` — `generate(vault_dir)` writes per-thesis notes + `dashboard.md`
+- `src/cortex/api.py` — FastAPI: `GET/POST /theses`, `PATCH /theses/{id}`, `POST /theses/{id}/review`, `GET /review-queue`, `GET /calibration`, `GET /context/{ticker}`
+- `src/cortex/cli.py` — `db-init`, `new`, `review`, `calibration`, `mirror`, `rag-index`, `serve`
 - `tests/` — 42 tests, all passing
-- `src/wst/signals.py`, `src/wst/watchlist.py`, `src/wst/sources/financialdatasets.py` — deleted
+- `src/cortex/signals.py`, `src/cortex/watchlist.py`, `src/cortex/sources/financialdatasets.py` — deleted
 - `.claude/settings.json` — permission allowlist added
 
 ### NOT YET done
 - **ruff clean** — 6 E501 (line too long) errors remain in:
-  - `src/wst/cli.py` lines 54, 72
-  - `src/wst/mirror.py` line 97
-  - `src/wst/sources/congress.py` line 77
-  - `src/wst/sources/filings.py` lines 52, 74
+  - `src/cortex/cli.py` lines 54, 72
+  - `src/cortex/mirror.py` line 97
+  - `src/cortex/sources/congress.py` line 77
+  - `src/cortex/sources/filings.py` lines 52, 74
   Run `uv run ruff check src/` to see them. Fix by wrapping or shortening. Then run `uv run pyright src/`.
 - **Git commit** — nothing committed yet this session (42 modified/new files)
 - **React portal** (`web/`) — not started (Task #12)
 - **DESIGN.md** — not written
-- **wst-decisions skill + weekly scheduled job** — not started (Task #13)
+- **cortex-decisions skill + weekly scheduled job** — not started (Task #13)
 - **Research backbone ingest** — not started (Task #13)
 
 ## Next steps in order
@@ -50,13 +50,13 @@ git commit -m "feat: decision system core — storage, thesis CRUD, calibration,
 
 ### 2. Smoke-test the API
 ```bash
-uv run wst db-init
-uv run wst new --ticker AAPL --author rob --conviction 3 \
+uv run cortex db-init
+uv run cortex new --ticker AAPL --author rob --conviction 3 \
   --claim "Services margin expands to 40%" \
   --falsifier "Two consecutive quarters below 35%" \
   --review-date 2026-12-01
-uv run wst mirror    # writes to $WST_VAULT_DIR
-uv run wst serve     # curl http://localhost:8000/theses
+uv run cortex mirror    # writes to $CORTEX_VAULT_DIR
+uv run cortex serve     # curl http://localhost:8000/theses
 ```
 
 ### 3. React portal (Task #12)
@@ -81,16 +81,16 @@ Glass-premium tokens (from plan):
 
 Views needed: Dashboard, Thesis detail, New Thesis form, Calibration, Review queue.
 
-### 4. wst-decisions skill + schedule (Task #13)
-Use `skill-forge` to create `~/.claude/skills/wst-decisions.md` wrapping the CLI.
+### 4. cortex-decisions skill + schedule (Task #13)
+Use `skill-forge` to create `~/.claude/skills/cortex-decisions.md` wrapping the CLI.
 Use `schedule` skill to set up weekly review-queue nudge.
 
 ## Key file locations
 ```
-src/wst/
+src/cortex/
 ├── api.py          FastAPI app
 ├── calibration.py  Brier score / hit-rate
-├── cli.py          wst CLI entrypoint
+├── cli.py          cortex CLI entrypoint
 ├── config.py       Settings (DUCKDB_PATH, vault_dir)
 ├── mirror.py       Vault markdown generator
 ├── rag.py          fastembed + DuckDB VSS
@@ -105,18 +105,18 @@ src/wst/
     └── schemas.py   DDL + apply_schema()
 tests/               42 tests, all passing
 web/                 (not yet created)
-data/duckdb/wst.db   (created by db-init, gitignored)
+data/duckdb/cortex.db   (created by db-init, gitignored)
 ```
 
 ## Commands
 ```bash
-uv run wst db-init
-uv run wst new --ticker AAPL --author rob --conviction 3 --claim "..." --falsifier "..." --review-date 2026-12-01
-uv run wst review
-uv run wst calibration
-uv run wst mirror
-uv run wst rag-index
-uv run wst serve [--port 8000] [--reload]
+uv run cortex db-init
+uv run cortex new --ticker AAPL --author rob --conviction 3 --claim "..." --falsifier "..." --review-date 2026-12-01
+uv run cortex review
+uv run cortex calibration
+uv run cortex mirror
+uv run cortex rag-index
+uv run cortex serve [--port 8000] [--reload]
 uv run pytest
 uv run ruff check src/
 uv run pyright src/

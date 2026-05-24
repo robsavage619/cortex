@@ -427,7 +427,7 @@ export function Congress() {
         <div className="flex flex-1 flex-col items-center justify-center gap-2">
           <span className="num text-sm text-muted">NO CONGRESS DATA YET</span>
           <p className="max-w-xs text-center font-sans text-[12px] text-faint">
-            Run <span className="num text-cyan">wst congress-sync</span> or hit refresh on the dashboard.
+            Run <span className="num text-cyan">cortex congress-sync</span> or hit refresh on the dashboard.
           </p>
         </div>
       ) : (

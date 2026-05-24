@@ -4,10 +4,10 @@ from datetime import date
 
 import pytest
 
-from wst.review import due_for_review
-from wst.storage.db import connect
-from wst.storage.schemas import apply_schema
-from wst.thesis import create
+from cortex.review import due_for_review
+from cortex.storage.db import connect
+from cortex.storage.schemas import apply_schema
+from cortex.thesis import create
 
 
 @pytest.fixture()

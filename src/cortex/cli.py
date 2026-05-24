@@ -8,9 +8,9 @@ log = logging.getLogger(__name__)
 
 
 def _cmd_db_init(args: argparse.Namespace) -> None:  # noqa: ARG001
-    from wst.config import load_settings
-    from wst.storage.db import connect
-    from wst.storage.schemas import _load_vss, apply_schema
+    from cortex.config import load_settings
+    from cortex.storage.db import connect
+    from cortex.storage.schemas import _load_vss, apply_schema
 
     settings = load_settings()
     print(f"Initialising DB at {settings.duckdb_path}")
@@ -21,8 +21,8 @@ def _cmd_db_init(args: argparse.Namespace) -> None:  # noqa: ARG001
 
 
 def _cmd_new(args: argparse.Namespace) -> None:
-    from wst.config import load_settings
-    from wst.thesis import create
+    from cortex.config import load_settings
+    from cortex.thesis import create
 
     settings = load_settings()
     conviction = int(args.conviction)
@@ -44,8 +44,8 @@ def _cmd_new(args: argparse.Namespace) -> None:
 
 
 def _cmd_review(args: argparse.Namespace) -> None:  # noqa: ARG001
-    from wst.config import load_settings
-    from wst.review import due_for_review
+    from cortex.config import load_settings
+    from cortex.review import due_for_review
 
     settings = load_settings()
     queue = due_for_review(db_path=settings.duckdb_path)
@@ -59,8 +59,8 @@ def _cmd_review(args: argparse.Namespace) -> None:  # noqa: ARG001
 
 
 def _cmd_calibration(args: argparse.Namespace) -> None:  # noqa: ARG001
-    from wst.calibration import compute
-    from wst.config import load_settings
+    from cortex.calibration import compute
+    from cortex.config import load_settings
 
     settings = load_settings()
     report = compute(db_path=settings.duckdb_path)
@@ -83,8 +83,8 @@ def _cmd_calibration(args: argparse.Namespace) -> None:  # noqa: ARG001
 
 
 def _cmd_mirror(args: argparse.Namespace) -> None:  # noqa: ARG001
-    from wst.config import load_settings
-    from wst.mirror import generate
+    from cortex.config import load_settings
+    from cortex.mirror import generate
 
     settings = load_settings()
     n = generate(settings.vault_dir, db_path=settings.duckdb_path)
@@ -92,8 +92,8 @@ def _cmd_mirror(args: argparse.Namespace) -> None:  # noqa: ARG001
 
 
 def _cmd_rag_index(args: argparse.Namespace) -> None:  # noqa: ARG001
-    from wst.config import load_settings
-    from wst.rag import index_vault
+    from cortex.config import load_settings
+    from cortex.rag import index_vault
 
     settings = load_settings()
     n = index_vault(settings.research_dir, db_path=settings.duckdb_path)
@@ -101,8 +101,8 @@ def _cmd_rag_index(args: argparse.Namespace) -> None:  # noqa: ARG001
 
 
 def _cmd_discover(args: argparse.Namespace) -> None:
-    from wst.config import load_settings
-    from wst.discovery import run_discovery
+    from cortex.config import load_settings
+    from cortex.discovery import run_discovery
 
     settings = load_settings()
     log.info("Starting CORTEX discovery pipeline…")
@@ -122,8 +122,8 @@ def _cmd_discover(args: argparse.Namespace) -> None:
 
 
 def _cmd_congress_sync(args: argparse.Namespace) -> None:
-    from wst.config import load_settings
-    from wst.sources.congress import (
+    from cortex.config import load_settings
+    from cortex.sources.congress import (
         CongressSourceError,
         backfill_senate_trades,
         fetch_senate_trades,
@@ -154,8 +154,8 @@ def _cmd_congress_sync(args: argparse.Namespace) -> None:
 
 
 def _cmd_funds_sync(args: argparse.Namespace) -> None:  # noqa: ARG001
-    from wst.config import load_settings
-    from wst.sources.funds import MANAGERS, sync_all_managers
+    from cortex.config import load_settings
+    from cortex.sources.funds import MANAGERS, sync_all_managers
 
     settings = load_settings()
     print(f"Syncing 13F moves for {len(MANAGERS)} managers…")
@@ -164,9 +164,9 @@ def _cmd_funds_sync(args: argparse.Namespace) -> None:  # noqa: ARG001
 
 
 def _cmd_insiders_sync(args: argparse.Namespace) -> None:
-    from wst.config import load_settings
-    from wst.sources.insiders import fetch_insider_buys_bulk_index
-    from wst.sources.universe import sp500_tickers
+    from cortex.config import load_settings
+    from cortex.sources.insiders import fetch_insider_buys_bulk_index
+    from cortex.sources.universe import sp500_tickers
 
     settings = load_settings()
     universe = set(sp500_tickers())
@@ -182,9 +182,9 @@ def _cmd_insiders_sync(args: argparse.Namespace) -> None:
 
 
 def _cmd_activism_sync(args: argparse.Namespace) -> None:
-    from wst.config import load_settings
-    from wst.sources.activism import fetch_activism_events, store_activism_events
-    from wst.sources.universe import sp500_tickers
+    from cortex.config import load_settings
+    from cortex.sources.activism import fetch_activism_events, store_activism_events
+    from cortex.sources.universe import sp500_tickers
 
     settings = load_settings()
     universe = set(sp500_tickers())
@@ -198,8 +198,8 @@ def _cmd_activism_sync(args: argparse.Namespace) -> None:
 
 
 def _cmd_funds_backfill(args: argparse.Namespace) -> None:  # noqa: ARG001
-    from wst.config import load_settings
-    from wst.sources.funds import MANAGERS, sync_all_managers
+    from cortex.config import load_settings
+    from cortex.sources.funds import MANAGERS, sync_all_managers
 
     settings = load_settings()
     print(
@@ -211,8 +211,8 @@ def _cmd_funds_backfill(args: argparse.Namespace) -> None:  # noqa: ARG001
 
 
 def _cmd_fundamentals_sync(args: argparse.Namespace) -> None:  # noqa: ARG001
-    from wst.config import load_settings
-    from wst.sources.fundamentals import sync_universe_fundamentals
+    from cortex.config import load_settings
+    from cortex.sources.fundamentals import sync_universe_fundamentals
 
     settings = load_settings()
     print("Syncing point-in-time fundamentals from EDGAR (this is slow)…")
@@ -221,8 +221,8 @@ def _cmd_fundamentals_sync(args: argparse.Namespace) -> None:  # noqa: ARG001
 
 
 def _cmd_congress_oos(args: argparse.Namespace) -> None:
-    from wst.backtest import run_congress_oos
-    from wst.config import load_settings
+    from cortex.backtest import run_congress_oos
+    from cortex.config import load_settings
 
     settings = load_settings()
     print()
@@ -269,8 +269,8 @@ def _cmd_congress_oos(args: argparse.Namespace) -> None:
 
 
 def _cmd_backtest(args: argparse.Namespace) -> None:
-    from wst.backtest import run_backtest
-    from wst.config import load_settings
+    from cortex.backtest import run_backtest
+    from cortex.config import load_settings
 
     settings = load_settings()
     rep = run_backtest(settings.duckdb_path, start_year=args.start_year)
@@ -316,7 +316,7 @@ def _cmd_serve(args: argparse.Namespace) -> None:
     import uvicorn
 
     uvicorn.run(
-        "wst.api:app",
+        "cortex.api:app",
         host="127.0.0.1",
         port=args.port,
         reload=args.reload,
@@ -324,8 +324,8 @@ def _cmd_serve(args: argparse.Namespace) -> None:
 
 
 def _cmd_vol_screen(args: argparse.Namespace) -> None:
-    from wst.config import load_settings
-    from wst.volatility_screen import run_volatility_screen
+    from cortex.config import load_settings
+    from cortex.volatility_screen import run_volatility_screen
 
     settings = load_settings()
     log.info("Starting swing screen…")
@@ -351,7 +351,7 @@ def _cmd_vol_screen(args: argparse.Namespace) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(prog="wst", description="Wall Street Tracker CLI")
+    parser = argparse.ArgumentParser(prog="cortex", description="CORTEX — factor research CLI")
     sub = parser.add_subparsers(dest="command", required=True)
 
     sub.add_parser("db-init", help="Create / migrate the DuckDB schema")

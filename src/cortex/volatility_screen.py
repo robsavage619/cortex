@@ -214,7 +214,7 @@ def _fetch_company_names(tickers: list[str]) -> dict[str, str | None]:
 
 def _store(stocks: list[VolStock], db_path: Path) -> None:
     """Atomically replace the volatility_screen table contents."""
-    from wst.storage.db import connect
+    from cortex.storage.db import connect
 
     with connect(db_path) as conn:
         conn.execute("DELETE FROM volatility_screen")
@@ -263,7 +263,7 @@ def list_volatility_screen(db_path: Path) -> list[VolStock]:
     """
     import duckdb
 
-    from wst.storage.db import connect
+    from cortex.storage.db import connect
 
     with connect(db_path, read_only=True) as conn:
         try:
@@ -325,7 +325,7 @@ def run_volatility_screen(
         lookback_days: Trading-day window; floored at ``MIN_LOOKBACK_DAYS``
             (two weeks) per the feature spec.
     """
-    from wst.sources.universe import composite_tickers
+    from cortex.sources.universe import composite_tickers
 
     lookback = max(MIN_LOOKBACK_DAYS, lookback_days)
     as_of = date.today()

@@ -3,15 +3,15 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 
-from wst.rag import (
+from cortex.rag import (
     _chunk_text,
     _note_to_wikilink,
     _tier_from_path,
     index_vault,
     retrieve,
 )
-from wst.storage.db import connect
-from wst.storage.schemas import apply_schema
+from cortex.storage.db import connect
+from cortex.storage.schemas import apply_schema
 
 _DIM = 384
 
