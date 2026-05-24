@@ -4,8 +4,8 @@ import { TrendingDown, TrendingUp } from 'lucide-react'
 
 import { Button } from '@/components/ui/Button'
 import { Input, Label, Select, Textarea } from '@/components/ui/Field'
-import { useCreateThesis, useTickerContext } from '@/lib/api'
-import { cn, fmtPrice, fmtSignedPercent } from '@/lib/utils'
+import { useCalibration, useCreateThesis, useTickerContext } from '@/lib/api'
+import { cn, fmtPercent, fmtPrice, fmtSignedPercent } from '@/lib/utils'
 
 // ── Live price anchor ─────────────────────────────────────────────────────────
 
@@ -54,6 +54,53 @@ function Section({ title, subtitle }: { title: string; subtitle?: string }) {
     <div className="border-b border-border pt-2 pb-3">
       <span className="label block">{title}</span>
       {subtitle && <p className="font-sans mt-0.5 text-[11px] text-faint">{subtitle}</p>}
+    </div>
+  )
+}
+
+// ── Conviction calibration nudge ──────────────────────────────────────────────
+
+const MIN_RELIABLE = 5 // buckets below this many reviews are statistical noise
+
+function ConvictionNudge({ conviction }: { conviction: number }) {
+  const { data } = useCalibration()
+  const bucket = data?.buckets.find(b => b.conviction === conviction)
+
+  if (!bucket || bucket.total === 0) {
+    return (
+      <p className="num mt-2 text-[10px] text-faint">
+        NO TRACK RECORD AT {conviction}/5 YET — NUDGE UNLOCKS ONCE YOU REVIEW THESES AT THIS LEVEL
+      </p>
+    )
+  }
+
+  const expected = conviction / 5
+  const gap = bucket.hit_rate - expected
+  const reliable = bucket.total >= MIN_RELIABLE
+  const overconfident = reliable && gap < -0.1
+
+  return (
+    <div className={cn(
+      'mt-2 border-l-2 px-3 py-2',
+      overconfident ? 'border-warn bg-warn/5' : reliable ? 'border-up bg-up/5' : 'border-border-bright',
+    )}>
+      <p className="num text-[11px] text-ink">
+        YOUR {conviction}/5 CALLS HIT{' '}
+        <span className={cn('font-semibold', overconfident ? 'text-warn' : reliable ? 'text-up' : 'text-muted')}>
+          {fmtPercent(bucket.hit_rate, 0)}
+        </span>{' '}
+        <span className="text-faint">({bucket.correct}/{bucket.total})</span> · TARGET {fmtPercent(expected, 0)}
+      </p>
+      {overconfident && (
+        <p className="font-sans mt-1 text-[10px] text-warn">
+          Overconfident at this level by {fmtPercent(-gap, 0)} — consider dialing conviction down.
+        </p>
+      )}
+      {!reliable && (
+        <p className="font-sans mt-1 text-[10px] text-faint">
+          Small sample ({bucket.total}/{MIN_RELIABLE}) — read as directional, not statistical.
+        </p>
+      )}
     </div>
   )
 }
@@ -186,6 +233,7 @@ export function NewThesis() {
                 </span>
               ))}
             </div>
+            <ConvictionNudge conviction={conviction} />
           </div>
 
           <div className="grid grid-cols-2 gap-4">

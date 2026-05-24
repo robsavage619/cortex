@@ -6,6 +6,9 @@ from pathlib import Path
 
 from wst.storage.db import connect
 
+MIN_RELIABLE_SAMPLE = 5
+"""Buckets below this many reviewed outcomes are statistical noise."""
+
 
 @dataclass
 class BucketStats:
@@ -177,7 +180,9 @@ def compute(db_path: Path | None = None) -> CalibrationReport:
         per_author[author] = float(brier_score_loss(a_true, a_prob, pos_label=1))
 
     overconfident = any(
-        b.hit_rate < _conviction_to_prob(b.conviction) - 0.10 for b in buckets
+        b.total >= MIN_RELIABLE_SAMPLE
+        and b.hit_rate < _conviction_to_prob(b.conviction) - 0.10
+        for b in buckets
     )
 
     return CalibrationReport(

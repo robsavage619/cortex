@@ -55,10 +55,17 @@ def test_all_correct_high_conviction(db):
 
 
 def test_all_wrong_high_conviction_is_overconfident(db):
-    for _ in range(4):
+    for _ in range(5):
         _seed(db, "rob", conviction=5, outcome="wrong")
     report = compute(db)
     assert report.overconfident is True
+
+
+def test_small_sample_does_not_flag_overconfident(db):
+    for _ in range(4):
+        _seed(db, "rob", conviction=5, outcome="wrong")
+    report = compute(db)
+    assert report.overconfident is False
 
 
 def test_unclear_outcomes_excluded(db):

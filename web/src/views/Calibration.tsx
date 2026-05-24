@@ -9,8 +9,12 @@ import {
   YAxis,
 } from 'recharts'
 
-import { useCalibration } from '@/lib/api'
+import { Link } from 'react-router-dom'
+
+import { useCalibration, useReviewQueue } from '@/lib/api'
 import { cn, fmtDate, fmtPercent } from '@/lib/utils'
+
+const MIN_RELIABLE = 5 // buckets below this many reviews are statistical noise
 
 // ── KPI tile ──────────────────────────────────────────────────────────────────
 
@@ -47,6 +51,8 @@ function Panel({ title, children, className }: {
 
 export function Calibration() {
   const cal = useCalibration()
+  const { data: due } = useReviewQueue()
+  const dueCount = due?.length ?? 0
 
   if (cal.isLoading) {
     return <div className="flex flex-1 items-center justify-center">
@@ -68,7 +74,7 @@ export function Calibration() {
   }))
 
   const trend = (data?.trend ?? []).map(p => ({
-    date:  fmtDate(p.reviewed_on),
+    date:  fmtDate(p.date),
     brier: Number(p.brier.toFixed(3)),
   }))
 
@@ -100,6 +106,14 @@ export function Calibration() {
             Calibration unlocks once you've reviewed theses. Each graded outcome sharpens
             how well your conviction buckets map to actual outcomes.
           </p>
+          {dueCount > 0 && (
+            <Link
+              to="/review"
+              className="num mt-2 border border-warn px-4 py-2 text-[11px] font-semibold tracking-widest text-warn transition-colors hover:bg-warn hover:text-bg"
+            >
+              {dueCount} THESIS{dueCount === 1 ? '' : 'ES'} DUE FOR REVIEW →
+            </Link>
+          )}
         </div>
       ) : (
         <div className="flex-1 overflow-y-auto p-5 space-y-5">
@@ -161,15 +175,17 @@ export function Calibration() {
               <div className="p-5 space-y-3">
                 {data?.buckets.map(b => {
                   const pct = b.hit_rate * 100
-                  const color = pct >= 60 ? 'bg-up' : pct >= 40 ? 'bg-warn' : 'bg-down'
+                  const lowN = b.total < MIN_RELIABLE
+                  const color = lowN ? 'bg-border-bright' : pct >= 60 ? 'bg-up' : pct >= 40 ? 'bg-warn' : 'bg-down'
                   return (
-                    <div key={b.conviction} className="flex items-center gap-3">
+                    <div key={b.conviction} className={cn('flex items-center gap-3', lowN && 'opacity-50')}>
                       <span className="num w-8 shrink-0 text-[11px] text-muted">{b.conviction}/5</span>
                       <div className="h-1.5 flex-1 bg-border">
                         <div className={cn('h-full transition-all', color)}
                           style={{ width: `${pct}%` }} />
                       </div>
-                      <span className="num w-28 shrink-0 text-right text-[11px] text-ink">
+                      <span className="num w-32 shrink-0 text-right text-[11px] text-ink">
+                        {lowN && <span className="text-faint">LOW N </span>}
                         {fmtPercent(b.hit_rate)} <span className="text-faint">({b.correct}/{b.total})</span>
                       </span>
                     </div>
@@ -241,7 +257,7 @@ export function Calibration() {
               {data?.decision_counts && (
                 <div className="border-t border-border px-5 py-4 space-y-2">
                   <span className="label block mb-2">DECISION QUALITY BREAKDOWN</span>
-                  {(['good', 'flawed', 'unknown'] as const).map(k => {
+                  {(['good', 'flawed', 'unclear'] as const).map(k => {
                     const count = data.decision_counts![k] ?? 0
                     const color = k === 'good' ? 'text-up' : k === 'flawed' ? 'text-down' : 'text-faint'
                     return (
