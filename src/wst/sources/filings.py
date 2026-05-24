@@ -4,12 +4,12 @@ import contextlib
 import logging
 from dataclasses import dataclass, field
 
+from wst.config import sec_user_agent
+
 logger = logging.getLogger(__name__)
 
-# SEC fair-access requires a descriptive User-Agent; set via edgartools config
-_USER_AGENT = (
-    "wst/0.1 (private household research; contact via github.com/robsavage619)"
-)
+# SEC fair-access requires a descriptive User-Agent; set via WST_SEC_USER_AGENT.
+_USER_AGENT = sec_user_agent()
 
 
 @dataclass

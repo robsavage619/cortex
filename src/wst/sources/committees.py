@@ -23,6 +23,8 @@ import json
 import logging
 import urllib.request
 
+from wst.config import sec_user_agent
+
 log = logging.getLogger(__name__)
 
 # High-value committee IDs from unitedstates/congress-legislators schema.
@@ -78,7 +80,7 @@ def _fetch_dynamic_weights() -> dict[str, float]:
     )
     try:
         req = urllib.request.Request(
-            url, headers={"User-Agent": "Rob Savage rob.savage.research@gmail.com"}
+            url, headers={"User-Agent": sec_user_agent()}
         )
         with urllib.request.urlopen(req, timeout=15) as r:
             committees: dict[str, list[dict]] = json.loads(r.read())

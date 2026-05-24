@@ -822,17 +822,14 @@ Return ONLY a JSON object with exactly these keys. Each value is 1-2 sentences m
   "quality_factor": "what ROE says about capital efficiency"
 }}"""
 
-    # Locate the claude binary
+    # Locate the claude binary: PATH first, then an explicit WST_CLAUDE_BIN override.
     claude_bin = shutil.which("claude")
     if claude_bin is None:
-        # Fall back to the known desktop app path on macOS
-        _fallback = (
-            "/Users/robsavage/Library/Application Support/Claude/"
-            "claude-code/2.1.149/claude.app/Contents/MacOS/claude"
-        )
-        from pathlib import Path
-        if Path(_fallback).exists():
-            claude_bin = _fallback
+        import os
+
+        override = os.environ.get("WST_CLAUDE_BIN", "")
+        if override and Path(override).exists():
+            claude_bin = override
 
     if claude_bin is None:
         raise HTTPException(

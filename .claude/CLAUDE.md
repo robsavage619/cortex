@@ -5,7 +5,7 @@ Savage Wall Street Tracker — a personal factor-model research platform.
 Single user (Rob). Not a product. Optimise for research iteration speed.
 
 ## Stack
-- Backend: FastAPI (`src/wst/`), SQLite via `wst.storage.db.connect()`
+- Backend: FastAPI (`src/wst/`), DuckDB via `wst.storage.db.connect()`
 - Frontend: React + Vite (`web/`), built to `web/dist/`, served by FastAPI on port 8000
 - CLI: `uv run wst <command>` — see `src/wst/cli.py` for all commands
 - Run server: `uv run wst serve` (serves React SPA + API on same port 8000)
@@ -24,8 +24,8 @@ Single user (Rob). Not a product. Optimise for research iteration speed.
 - Hard cap: ~10 req/s. Use `_MAX_WORKERS = 3` with `_RETRY_SLEEP = 12.0`s back-off on 429
 - After multiple failed runs, the whole IP gets rate-limited. Wait until
   `curl -s -o /dev/null -w "%{http_code}" https://www.sec.gov/files/company_tickers.json` → `200`
-- `User-Agent` MUST be `"Rob Savage household-research rob.savage.research@gmail.com"` —
-  name+email format; SEC returns 403 for anything else
+- `User-Agent` comes from `WST_SEC_USER_AGENT` (see `wst.config.sec_user_agent`) and MUST
+  be `"Name email"` format; SEC returns 403 for anything else. Never hardcode a contact.
 
 ### Bulk-index approach (use this, not per-company queries)
 - `https://www.sec.gov/Archives/edgar/full-index/{year}/QTR{N}/form.idx` — ~10 MB/quarter

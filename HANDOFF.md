@@ -5,8 +5,6 @@ Savage Wall Street Tracker — a household investment **decision quality system*
 DuckDB canonical store, FastAPI backend, React portal (glass-premium), vault markdown mirror.
 **Hard rule: zero paid services.**
 
-Plan file: `~/.claude/plans/i-m-hoping-that-you-curried-stream.md`
-
 ## Current state — all 42 tests passing
 
 ### Done this session
@@ -57,13 +55,13 @@ uv run wst new --ticker AAPL --author rob --conviction 3 \
   --claim "Services margin expands to 40%" \
   --falsifier "Two consecutive quarters below 35%" \
   --review-date 2026-12-01
-uv run wst mirror    # check ~/Vault/savage_vault/investing/
+uv run wst mirror    # writes to $WST_VAULT_DIR
 uv run wst serve     # curl http://localhost:8000/theses
 ```
 
 ### 3. React portal (Task #12)
 ```bash
-cd /Users/robsavage/Projects/savage-wall-street-tracker
+cd savage-wall-street-tracker
 npm create vite@latest web -- --template react-ts
 cd web
 npm install

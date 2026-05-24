@@ -10,6 +10,22 @@ DATA_DIR = _PROJECT_ROOT / "data"
 DEFAULT_DUCKDB_PATH = DATA_DIR / "duckdb" / "wst.db"
 DEFAULT_VAULT_DIR = Path.home() / "Vault" / "savage_vault" / "investing"
 
+# SEC EDGAR requires a "Sample Company name AdminContact@example.com"-style
+# User-Agent on every request. Set WST_SEC_USER_AGENT to your own real contact
+# before running any sync command, or SEC will return 403.
+DEFAULT_SEC_USER_AGENT = "WST Research wst-research@example.com"
+
+
+def sec_user_agent() -> str:
+    """Return the SEC EDGAR User-Agent / identity string.
+
+    Sourced from ``WST_SEC_USER_AGENT`` so personal contact details never live
+    in source. Falls back to a generic placeholder that SEC will reject — set
+    the env var to a real ``Name email`` contact before syncing.
+    """
+    _load_dotenv(Path.cwd() / ".env")
+    return os.environ.get("WST_SEC_USER_AGENT", DEFAULT_SEC_USER_AGENT)
+
 
 def _load_dotenv(path: Path) -> None:
     """Populate os.environ from a .env file without overwriting existing keys."""

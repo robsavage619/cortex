@@ -19,9 +19,11 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
+from wst.config import sec_user_agent
+
 log = logging.getLogger(__name__)
 
-_IDENTITY = "Rob Savage household-research rob.savage.research@gmail.com"
+_IDENTITY = sec_user_agent()
 
 _EPS_TAG = "us-gaap:EarningsPerShareDiluted"
 _NI_TAG = "us-gaap:NetIncomeLoss"

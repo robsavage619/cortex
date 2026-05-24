@@ -29,9 +29,11 @@ from pathlib import Path
 
 import requests
 
+from wst.config import sec_user_agent
+
 log = logging.getLogger(__name__)
 
-_IDENTITY = "Rob Savage household-research rob.savage.research@gmail.com"
+_IDENTITY = sec_user_agent()
 _CIK_TICKER_URL = "https://www.sec.gov/files/company_tickers.json"
 _RATE_SLEEP = 0.12  # seconds between EDGAR filing XML downloads
 

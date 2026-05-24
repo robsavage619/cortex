@@ -19,10 +19,12 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
+from wst.config import sec_user_agent
+
 log = logging.getLogger(__name__)
 
 # SEC fair-access requires a descriptive name + contact email User-Agent.
-_IDENTITY = "Rob Savage household-research rob.savage.research@gmail.com"
+_IDENTITY = sec_user_agent()
 
 # Curated notable managers — all CIKs verified to have ≥2 13F-HR filings.
 MANAGERS: dict[str, str] = {
