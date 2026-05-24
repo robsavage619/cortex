@@ -206,6 +206,17 @@ export function useCandidates() {
   })
 }
 
+export function useVolatilityScreen() {
+  return useQuery({
+    queryKey: keys.volatilityScreen,
+    staleTime: 5 * 60_000,
+    queryFn: async () => {
+      const { data } = await http.get<VolScreenResponse>('/screen/volatility')
+      return data
+    },
+  })
+}
+
 export function useCandidate(ticker: string | null) {
   return useQuery({
     queryKey: keys.candidate(ticker ?? ''),
