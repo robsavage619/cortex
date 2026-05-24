@@ -114,7 +114,7 @@ def index_vault(
         return 0
 
     texts = [c[4] for c in chunks]
-    embeddings = [list(emb) for emb in embedder.embed(texts)]
+    embeddings = [[float(x) for x in emb] for emb in embedder.embed(texts)]
     if len(embeddings) != len(chunks):
         raise RuntimeError(
             f"Embedder returned {len(embeddings)} vectors for {len(chunks)} chunks"
@@ -156,7 +156,7 @@ def retrieve(
     Falls back to an empty list if the VSS index is not built or no chunks exist.
     """
     embedder = embedder or _get_embedder()
-    query_vec = list(next(iter(embedder.embed([query]))))
+    query_vec = [float(x) for x in next(iter(embedder.embed([query])))]
 
     with connect(db_path, read_only=True) as conn:
         try:

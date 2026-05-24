@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import duckdb
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 7
 
 DDL_STATEMENTS = (
     """
@@ -65,6 +65,107 @@ DDL_STATEMENTS = (
         text       VARCHAR   NOT NULL,
         embedding  FLOAT[384],
         indexed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS congress_trades (
+        id                VARCHAR   PRIMARY KEY,
+        senator           VARCHAR   NOT NULL,
+        ticker            VARCHAR   NOT NULL,
+        transaction_type  VARCHAR,
+        amount            VARCHAR,
+        transaction_date  DATE,
+        disclosure_date   DATE,
+        asset_description  VARCHAR,
+        report_url        VARCHAR,
+        chamber           VARCHAR   NOT NULL DEFAULT 'senate',
+        synced_at         TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS fundamentals (
+        ticker       VARCHAR NOT NULL,
+        period_end   DATE    NOT NULL,
+        filing_date  DATE    NOT NULL,
+        eps_diluted  DOUBLE,
+        net_income   DOUBLE,
+        equity       DOUBLE,
+        PRIMARY KEY (ticker, period_end)
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS fund_holdings (
+        id            VARCHAR   PRIMARY KEY,
+        manager       VARCHAR   NOT NULL,
+        manager_cik   VARCHAR   NOT NULL,
+        ticker        VARCHAR   NOT NULL,
+        issuer        VARCHAR,
+        action        VARCHAR   NOT NULL,
+        shares        BIGINT,
+        prev_shares   BIGINT,
+        value         BIGINT,
+        pct_change    DOUBLE,
+        period        DATE,
+        synced_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS activist_stakes (
+        id            VARCHAR   PRIMARY KEY,
+        ticker        VARCHAR   NOT NULL,
+        subject_cik   VARCHAR   NOT NULL,
+        filer         VARCHAR,
+        filing_date   DATE      NOT NULL,
+        synced_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS insider_buys (
+        id               VARCHAR   PRIMARY KEY,
+        ticker           VARCHAR   NOT NULL,
+        issuer_cik       VARCHAR   NOT NULL,
+        filer_cik        VARCHAR   NOT NULL DEFAULT '',
+        filer_name       VARCHAR,
+        filer_role       VARCHAR   NOT NULL DEFAULT 'other',
+        transaction_date DATE      NOT NULL,
+        filing_date      DATE      NOT NULL,
+        shares           DOUBLE,
+        value_usd        DOUBLE,
+        synced_at        TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS candidates (
+        ticker              VARCHAR   PRIMARY KEY,
+        as_of_date          DATE      NOT NULL,
+        discovered_at       TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        momentum_12_1       DOUBLE,
+        vol_252d            DOUBLE,
+        sharpe_12m          DOUBLE,
+        above_200d_sma      BOOLEAN,
+        earnings_yield      DOUBLE,
+        roe                 DOUBLE,
+        z_momentum          DOUBLE,
+        z_low_vol           DOUBLE,
+        z_sharpe            DOUBLE,
+        z_value             DOUBLE,
+        z_quality           DOUBLE,
+        composite_score     DOUBLE    NOT NULL,
+        composite_rank      INTEGER   NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS volatility_screen (
+        ticker             VARCHAR   PRIMARY KEY,
+        as_of_date         DATE      NOT NULL,
+        computed_at        TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        lookback_days      INTEGER   NOT NULL,
+        avg_dollar_range   DOUBLE,
+        range_consistency  DOUBLE,
+        avg_range_pct      DOUBLE,
+        avg_close          DOUBLE,
+        ari_special_score  DOUBLE    NOT NULL,
+        rank               INTEGER   NOT NULL
     )
     """,
 )

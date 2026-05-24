@@ -17,6 +17,9 @@ class PriceContext:
     market_cap: float | None
     pe_ratio: float | None
     news_headlines: list[str]
+    news_urls: list[str]
+    company_name: str | None = None
+    website: str | None = None
 
 
 @dataclass
@@ -112,14 +115,23 @@ def context_for(ticker: str, *, news_limit: int = 5) -> PriceContext:
             day_change = round((price - prev_close) / prev_close * 100, 2)
 
         news = yf_ticker.news or []
-        headlines = [
-            str(item.get("content", {}).get("title", "")).strip()
-            if isinstance(item.get("content"), dict)
-            else str(item.get("title", "")).strip()
-            for item in news[:news_limit]
-            if item
-        ]
-        headlines = [h for h in headlines if h]
+        news_items: list[tuple[str, str]] = []
+        for item in news[:news_limit]:
+            if not item:
+                continue
+            content = item.get("content", {})
+            if isinstance(content, dict):
+                title = str(content.get("title", "")).strip()
+                url = (
+                    str(content.get("canonicalUrl", {}).get("url", "")).strip()
+                    if isinstance(content.get("canonicalUrl"), dict)
+                    else str(content.get("url", "")).strip()
+                )
+            else:
+                title = str(item.get("title", "")).strip()
+                url = str(item.get("link", "")).strip()
+            if title:
+                news_items.append((title, url))
 
         return PriceContext(
             ticker=ticker.upper(),
@@ -129,7 +141,10 @@ def context_for(ticker: str, *, news_limit: int = 5) -> PriceContext:
             week_52_low=_as_float(info.get("fiftyTwoWeekLow")),
             market_cap=_as_float(info.get("marketCap")),
             pe_ratio=_as_float(info.get("trailingPE")),
-            news_headlines=headlines,
+            news_headlines=[t for t, _ in news_items],
+            news_urls=[u for _, u in news_items],
+            company_name=info.get("longName") or info.get("shortName") or None,
+            website=info.get("website") or None,
         )
     except Exception as exc:
         raise MarketSourceError(f"yfinance fetch failed for {ticker}: {exc}") from exc
