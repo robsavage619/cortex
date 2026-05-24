@@ -8,7 +8,7 @@ import { cn } from '@/lib/utils'
 const nav = [
   { to: '/',            label: 'DASHBOARD',  icon: LayoutDashboard, end: true  },
   { to: '/review',      label: 'REVIEW',     icon: ListChecks,      end: false },
-  { to: '/ari-special', label: 'ARI SPECIAL', icon: Activity,       end: false },
+  { to: '/swing', label: 'SWING', icon: Activity,       end: false },
   { to: '/congress',    label: 'CONGRESS',   icon: Landmark,        end: false },
   { to: '/calibration', label: 'CALIBRATE',  icon: BarChart3,       end: false },
   { to: '/new',         label: 'NEW THESIS', icon: PlusCircle,      end: false },

@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BrowserRouter, Route, Routes } from 'react-router-dom'
 
 import { Layout } from '@/components/Layout'
-import { AriSpecial } from '@/views/AriSpecial'
+import { SwingScreen } from '@/views/SwingScreen'
 import { Calibration } from '@/views/Calibration'
 import { Congress } from '@/views/Congress'
 import { Dashboard } from '@/views/Dashboard'
@@ -23,7 +23,7 @@ export default function App() {
             <Route index element={<Dashboard />} />
             <Route path="thesis/:id" element={<ThesisDetail />} />
             <Route path="new" element={<NewThesis />} />
-            <Route path="ari-special" element={<AriSpecial />} />
+            <Route path="swing" element={<SwingScreen />} />
             <Route path="congress" element={<Congress />} />
             <Route path="calibration" element={<Calibration />} />
             <Route path="review" element={<ReviewQueue />} />

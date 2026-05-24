@@ -326,13 +326,13 @@ function sortValue(s: VolStock, key: SortKey): number {
     case 'consistency': return s.range_consistency ?? 0
     case 'oscillation': return s.oscillation_score ?? 0
     case 'price': return s.avg_close ?? 0
-    default: return s.ari_special_score
+    default: return s.swing_score
   }
 }
 
 // ── Main ────────────────────────────────────────────────────────────────────
 
-export function AriSpecial() {
+export function SwingScreen() {
   const { data, isLoading, error } = useVolatilityScreen()
   const [modalTicker, setModalTicker] = useState<string | null>(null)
   const [expanded, setExpanded] = useState<string | null>(null)
@@ -369,7 +369,7 @@ export function AriSpecial() {
     )
   }
 
-  const topScore = stocks[0]?.ari_special_score
+  const topScore = stocks[0]?.swing_score
   const widestAdr = stocks.reduce<number>((m, s) => Math.max(m, s.avg_dollar_range ?? 0), 0)
 
   return (
@@ -532,7 +532,7 @@ export function AriSpecial() {
                         </div>
                       </td>
                       <td className="num px-3 py-2 text-right text-[12px] text-ink">
-                        {s.ari_special_score.toFixed(1)}
+                        {s.swing_score.toFixed(1)}
                       </td>
                       <td className="num px-3 py-2 text-right text-[12px] text-warn">
                         {fmtPrice(s.avg_dollar_range)}

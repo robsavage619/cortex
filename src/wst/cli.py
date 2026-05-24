@@ -328,13 +328,13 @@ def _cmd_vol_screen(args: argparse.Namespace) -> None:
     from wst.volatility_screen import run_volatility_screen
 
     settings = load_settings()
-    log.info("Starting Ari Special volatility screen…")
+    log.info("Starting swing screen…")
     stocks = run_volatility_screen(
         settings.duckdb_path,
         top_n=args.top_n,
         lookback_days=args.lookback_days,
     )
-    print(f"Ari Special — top {len(stocks)} by consistent dollar swing")
+    print(f"Swing screen — top {len(stocks)} by consistent dollar swing")
     for s in stocks:
         adr = f"${s.avg_dollar_range:.2f}" if s.avg_dollar_range is not None else "—"
         cons = (
@@ -345,7 +345,7 @@ def _cmd_vol_screen(args: argparse.Namespace) -> None:
             f"{s.oscillation_score:.2f}" if s.oscillation_score is not None else "—"
         )
         print(
-            f"  #{s.rank:2d} {s.ticker:<6} score={s.ari_special_score:7.3f}"
+            f"  #{s.rank:2d} {s.ticker:<6} score={s.swing_score:7.3f}"
             f"  adr={adr:>9}  consistency={cons}  range={pct}  osc={osc}"
         )
 
@@ -388,7 +388,7 @@ def main() -> None:
 
     vol_p = sub.add_parser(
         "vol-screen",
-        help="Run the Ari Special — stocks with large, consistent daily $ swings",
+        help="Run the swing screen — stocks with large, consistent daily $ swings",
     )
     vol_p.add_argument(
         "--top-n",

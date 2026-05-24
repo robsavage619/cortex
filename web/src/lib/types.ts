@@ -211,7 +211,7 @@ export interface VolStock {
   range_position: number | null
   direction_changes: number | null
   avg_volume: number | null
-  ari_special_score: number
+  swing_score: number
   rank: number
   company_name: string | null
   max_range_pct: number | null

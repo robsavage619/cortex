@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import duckdb
 
-SCHEMA_VERSION = 11
+SCHEMA_VERSION = 12
 
 DDL_STATEMENTS = (
     """
@@ -169,7 +169,7 @@ DDL_STATEMENTS = (
         range_position     DOUBLE,
         direction_changes  INTEGER,
         avg_volume         DOUBLE,
-        ari_special_score  DOUBLE    NOT NULL,
+        swing_score        DOUBLE    NOT NULL,
         rank               INTEGER   NOT NULL,
         company_name       VARCHAR,
         max_range_pct      DOUBLE,
@@ -204,6 +204,20 @@ def apply_schema(conn: duckdb.DuckDBPyConnection) -> None:
         conn.execute(ddl)
     for ddl in MIGRATION_STATEMENTS:
         conn.execute(ddl)
+
+    # Rename the swing-screen score column for databases created before v12.
+    vol_cols = {
+        r[0]
+        for r in conn.execute(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_name = 'volatility_screen'"
+        ).fetchall()
+    }
+    if "ari_special_score" in vol_cols and "swing_score" not in vol_cols:
+        conn.execute(
+            "ALTER TABLE volatility_screen "
+            "RENAME COLUMN ari_special_score TO swing_score"
+        )
 
     row = conn.execute("SELECT MAX(version) FROM schema_version").fetchone()
     current = row[0] if row and row[0] is not None else 0

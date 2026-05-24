@@ -265,7 +265,7 @@ def _volstock_out(s: Any) -> dict[str, Any]:
         "range_position": s.range_position,
         "direction_changes": s.direction_changes,
         "avg_volume": s.avg_volume,
-        "ari_special_score": s.ari_special_score,
+        "swing_score": s.swing_score,
         "rank": s.rank,
         "company_name": s.company_name,
         "max_range_pct": s.max_range_pct,
@@ -635,7 +635,7 @@ def get_candidates() -> dict[str, Any]:
 
 @app.get("/screen/volatility")
 def get_volatility_screen() -> dict[str, Any]:
-    """The Ari Special — stocks with large, consistent daily dollar swings."""
+    """The swing screen — stocks with large, consistent daily dollar swings."""
     from wst.volatility_screen import list_volatility_screen
 
     stocks = list_volatility_screen(_db())

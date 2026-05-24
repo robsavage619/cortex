@@ -26,7 +26,7 @@ const monthLabel = (m: string): string => {
   return `${names[Number(mo) - 1] ?? mo} ${y.slice(2)}`
 }
 
-// ── KPI tile (matches AriSpecial) ─────────────────────────────────────────────
+// ── KPI tile (matches SwingScreen) ─────────────────────────────────────────────
 
 function Kpi({ label, value, sub, tone }: {
   label: string; value: string | number; sub?: string

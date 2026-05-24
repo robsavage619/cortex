@@ -9,7 +9,7 @@ from typing import Any
 log = logging.getLogger(__name__)
 
 # A "2-week" window in trading days; enforced as the floor so the screen always
-# reflects at least two weeks of price action as Ari specified.
+# reflects at least two weeks of price action.
 MIN_LOOKBACK_DAYS = 10
 DEFAULT_LOOKBACK_DAYS = 15
 
@@ -18,12 +18,12 @@ DEFAULT_LOOKBACK_DAYS = 15
 
 @dataclass
 class VolStock:
-    """A row of the Ari Special volatility screen.
+    """A row of the swing screen.
 
-    The Ari Special surfaces stocks that swing a large *and repeatable* dollar
+    The swing screen surfaces stocks that move a large *and repeatable* dollar
     amount between their daily highs and lows. ``avg_dollar_range`` is the
     Average Daily Range (ADR, a dollar cousin of ATR); ``range_consistency``
-    rewards swings of a stable size; ``ari_special_score`` is their product.
+    rewards swings of a stable size; ``swing_score`` is their product.
     """
 
     ticker: str
@@ -39,7 +39,7 @@ class VolStock:
     range_position: float | None
     direction_changes: int | None
     avg_volume: float | None
-    ari_special_score: float
+    swing_score: float
     rank: int
     company_name: str | None = None
     max_range_pct: float | None = None
@@ -51,7 +51,7 @@ class VolStock:
 def _compute_metrics(
     tickers: list[str], lookback_days: int
 ) -> dict[str, dict[str, Any]]:
-    """Download recent OHLC data and compute Ari Special metrics per ticker.
+    """Download recent OHLC data and compute swing-screen metrics per ticker.
 
     Returns a dict keyed by ticker with the metric keys mirrored on
     :class:`VolStock` (avg_dollar_range, range_consistency, oscillation_score,
@@ -94,7 +94,7 @@ def _compute_metrics(
         "range_position": None,
         "direction_changes": None,
         "avg_volume": None,
-        "ari_special_score": 0.0,
+        "swing_score": 0.0,
     }
 
     results: dict[str, dict[str, Any]] = {}
@@ -178,7 +178,7 @@ def _compute_metrics(
             "range_position": pos,
             "direction_changes": direction_changes,
             "avg_volume": vol,
-            "ari_special_score": round(score, 4),
+            "swing_score": round(score, 4),
         }
 
     return results
@@ -226,7 +226,7 @@ def _store(stocks: list[VolStock], db_path: Path) -> None:
                 ticker, as_of_date, computed_at, lookback_days,
                 avg_dollar_range, range_consistency, avg_range_pct, max_range_pct,
                 max_dollar_range, avg_close, oscillation_score, net_drift_pct,
-                range_position, direction_changes, avg_volume, ari_special_score,
+                range_position, direction_changes, avg_volume, swing_score,
                 rank, company_name
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
@@ -247,7 +247,7 @@ def _store(stocks: list[VolStock], db_path: Path) -> None:
                     s.range_position,
                     s.direction_changes,
                     s.avg_volume,
-                    s.ari_special_score,
+                    s.swing_score,
                     s.rank,
                     s.company_name,
                 )
@@ -257,7 +257,7 @@ def _store(stocks: list[VolStock], db_path: Path) -> None:
 
 
 def list_volatility_screen(db_path: Path) -> list[VolStock]:
-    """Load the Ari Special screen ordered by score, newest run first.
+    """Load the swing screen ordered by score, newest run first.
 
     Returns an empty list if the table does not exist yet (pre-migration DB).
     """
@@ -273,7 +273,7 @@ def list_volatility_screen(db_path: Path) -> list[VolStock]:
                     ticker, as_of_date, computed_at, lookback_days,
                     avg_dollar_range, range_consistency, avg_range_pct, max_range_pct,
                     max_dollar_range, avg_close, oscillation_score, net_drift_pct,
-                    range_position, direction_changes, avg_volume, ari_special_score,
+                    range_position, direction_changes, avg_volume, swing_score,
                     rank, company_name
                 FROM volatility_screen
                 ORDER BY rank
@@ -299,7 +299,7 @@ def list_volatility_screen(db_path: Path) -> list[VolStock]:
             range_position=r[12],
             direction_changes=r[13],
             avg_volume=r[14],
-            ari_special_score=r[15],
+            swing_score=r[15],
             rank=r[16],
             company_name=r[17],
         )
@@ -314,7 +314,7 @@ def run_volatility_screen(
     top_n: int = 75,
     lookback_days: int = DEFAULT_LOOKBACK_DAYS,
 ) -> list[VolStock]:
-    """Run the Ari Special volatility screen over the S&P 500 + S&P 400 universe.
+    """Run the swing screen over the S&P 500 + S&P 400 universe.
 
     Ranks stocks by swing % × consistency so that nimble mid-caps compete
     fairly with expensive large-caps.
@@ -332,18 +332,18 @@ def run_volatility_screen(
     now = datetime.now(tz=UTC)
 
     tickers = composite_tickers()
-    log.info("Ari Special: scanning %d tickers (%d-day window)", len(tickers), lookback)
+    log.info("Swing screen: scanning %d tickers (%dd window)", len(tickers), lookback)
 
     metrics = _compute_metrics(tickers, lookback)
 
     ranked = sorted(
         tickers,
-        key=lambda t: metrics.get(t, {}).get("ari_special_score") or 0.0,
+        key=lambda t: metrics.get(t, {}).get("swing_score") or 0.0,
         reverse=True,
     )
 
-    top_tickers = [t for t in ranked[:top_n] if (metrics.get(t, {}).get("ari_special_score") or 0.0) > 0]
-    log.info("Ari Special: fetching company names for %d tickers", len(top_tickers))
+    top_tickers = [t for t in ranked[:top_n] if (metrics.get(t, {}).get("swing_score") or 0.0) > 0]
+    log.info("Swing screen: fetching company names for %d tickers", len(top_tickers))
     names = _fetch_company_names(top_tickers)
 
     stocks: list[VolStock] = []
@@ -364,7 +364,7 @@ def run_volatility_screen(
                 range_position=m["range_position"],
                 direction_changes=m["direction_changes"],
                 avg_volume=m["avg_volume"],
-                ari_special_score=m["ari_special_score"],
+                swing_score=m["swing_score"],
                 rank=rank,
                 company_name=names.get(ticker),
                 max_range_pct=m["max_range_pct"],
@@ -373,9 +373,9 @@ def run_volatility_screen(
         )
 
     if not stocks:
-        log.warning("Ari Special: no scored stocks — aborting store to preserve existing data")
+        log.warning("Swing screen: no scored stocks — aborting store to preserve existing data")
         return stocks
 
-    log.info("Ari Special: storing %d stocks", len(stocks))
+    log.info("Swing screen: storing %d stocks", len(stocks))
     _store(stocks, db_path)
     return stocks
