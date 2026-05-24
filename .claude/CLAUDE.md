@@ -1,14 +1,14 @@
-# WST Project Context
+# CORTEX Project Context
 
 ## What this is
-Savage Wall Street Tracker — a personal factor-model research platform.
+CORTEX — a personal factor-model research platform.
 Single user (Rob). Not a product. Optimise for research iteration speed.
 
 ## Stack
-- Backend: FastAPI (`src/wst/`), DuckDB via `wst.storage.db.connect()`
+- Backend: FastAPI (`src/cortex/`), DuckDB via `cortex.storage.db.connect()`
 - Frontend: React + Vite (`web/`), built to `web/dist/`, served by FastAPI on port 8000
-- CLI: `uv run wst <command>` — see `src/wst/cli.py` for all commands
-- Run server: `uv run wst serve` (serves React SPA + API on same port 8000)
+- CLI: `uv run cortex <command>` — see `src/cortex/cli.py` for all commands
+- Run server: `uv run cortex serve` (serves React SPA + API on same port 8000)
 
 ## EDGAR integration lessons (hard-won)
 
@@ -24,7 +24,7 @@ Single user (Rob). Not a product. Optimise for research iteration speed.
 - Hard cap: ~10 req/s. Use `_MAX_WORKERS = 3` with `_RETRY_SLEEP = 12.0`s back-off on 429
 - After multiple failed runs, the whole IP gets rate-limited. Wait until
   `curl -s -o /dev/null -w "%{http_code}" https://www.sec.gov/files/company_tickers.json` → `200`
-- `User-Agent` comes from `WST_SEC_USER_AGENT` (see `wst.config.sec_user_agent`) and MUST
+- `User-Agent` comes from `CORTEX_SEC_USER_AGENT` (see `cortex.config.sec_user_agent`) and MUST
   be `"Name email"` format; SEC returns 403 for anything else. Never hardcode a contact.
 
 ### Bulk-index approach (use this, not per-company queries)

@@ -29,7 +29,9 @@ import type {
   VolScreenResponse,
 } from './types'
 
-export const http = axios.create({ baseURL: '/api' })
+// Dev: Vite proxies `/api/*` to the backend (stripping the prefix).
+// Prod: the SPA is served by FastAPI on the same origin, where routes live at root.
+export const http = axios.create({ baseURL: import.meta.env.DEV ? '/api' : '' })
 
 const keys = {
   theses: ['theses'] as const,
