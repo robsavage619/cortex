@@ -1,36 +1,93 @@
-# Savage Wall Street Tracker (WST)
+<p align="center">
+  <img src="docs/banner.png" alt="CORTEX — a point-in-time, multi-factor research engine" width="100%"/>
+</p>
 
-> A factor-model research platform that treats investing as a **calibrated decision
-> process**, not a signal feed. Every number on screen is evidence for a decision —
-> never a recommendation.
+<p align="center">
+  <b>A factor-model research platform that treats investing as a calibrated decision process — not a signal feed.</b><br/>
+  <i>Every number on screen is evidence for a decision. Never a recommendation.</i>
+</p>
 
-WST is a single-operator quantitative research platform built end-to-end: a
-point-in-time factor engine, an alt-data ingestion layer sourced entirely from free
-public filings, a decision-quality system that scores the operator's own forecasting
-calibration, and a glass-premium React portal — all served from one Python process.
-
-It is deliberately **honest about what it has and hasn't found**: the backtest harness
-holds every candidate factor to a pre-registered, multiple-testing-corrected
-significance bar, and the platform refuses to dress up noise as alpha. No factor has
-cleared the bar yet, so nothing trades live. That restraint is the point.
+<p align="center">
+  <a href="https://www.python.org/"><img src="https://img.shields.io/badge/python-3.12-blue.svg" alt="python 3.12"/></a>
+  <a href="https://fastapi.tiangolo.com/"><img src="https://img.shields.io/badge/api-FastAPI-009688" alt="FastAPI"/></a>
+  <a href="https://duckdb.org/"><img src="https://img.shields.io/badge/store-DuckDB%20%2B%20VSS-fff100" alt="DuckDB"/></a>
+  <a href="web/"><img src="https://img.shields.io/badge/frontend-React%2018%20%2B%20Vite-61dafb" alt="React 18"/></a>
+  <img src="https://img.shields.io/badge/tests-69%20passing-34D399" alt="tests"/>
+  <img src="https://img.shields.io/badge/paid%20APIs-zero-8B5CF6" alt="zero paid APIs"/>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-source--available-lightgrey" alt="license"/></a>
+</p>
 
 ---
 
-## Why this project exists
+## The 60-second pitch
 
-Most retail "stock tools" optimise for action — buy buttons, green arrows, dopamine.
-WST optimises for the opposite: slower, better-calibrated decisions, and intellectual
-honesty about edge. It was built to demonstrate, in one codebase:
+Most retail "stock tools" optimise for action — buy buttons, green arrows, dopamine. **CORTEX optimises for the opposite:** slower, better-calibrated decisions, and intellectual honesty about edge.
 
-- **Research engineering** — point-in-time data discipline, survivorship-bias
-  accounting, pre-registration, and honest negative results.
-- **Data engineering** — robust ingestion from messy, undocumented public filing
-  systems (SEC EDGAR, Senate disclosures) with rate-limit etiquette and idempotent
-  writes, using **zero paid APIs**.
-- **Full-stack product** — a typed FastAPI service, a vector-search research layer,
-  and a polished React/TypeScript portal, shipped as a single deployable.
-- **Product integrity** — an anti-action-bias design system and a persistent
-  "decision tool — not financial advice" contract surfaced everywhere.
+It is a single-operator quantitative research platform built end-to-end: a point-in-time multi-factor engine over the S&P universe, an alt-data ingestion layer sourced **entirely from free public filings**, a decision-quality system that scores the operator's own forecasting calibration, and a glass-premium React portal — all served from one Python process.
+
+It is deliberately **honest about what it has and hasn't found.** The backtest harness holds every candidate factor to a pre-registered, multiple-testing-corrected significance bar, and refuses to dress up noise as alpha. As of the latest run, **no factor clears the bar — so nothing trades live.** That restraint is the point.
+
+> **For reviewers:** build the portal (`cd web && npm install && npm run build`), then `uv run cortex serve` and open `http://127.0.0.1:8000`. The walkthrough below mirrors what you'll see.
+
+---
+
+## The command center
+
+> *A dark-only, anti-action-bias dashboard. Gains and losses render in muted green/red on purpose — the UI signals direction, never excitement.*
+
+<p align="center">
+  <img src="docs/screenshots/dashboard.png" alt="CORTEX dashboard — discovered candidates with live factor z-score meters" width="100%"/>
+</p>
+
+The dashboard opens on the **CORTEX-ranked universe**: every candidate carries a composite z-score and a per-factor breakdown — momentum, low-vol, Sharpe, value, quality — rendered as live meters. **DISCOVERED** is the raw screen; **ALGO BUYS** are the engine's multi-factor picks, *built from the model, not hand-selected*; **STRONG BUY** holds your own hand-authored theses at conviction ≥ 4. The top strip carries calibration KPIs (Brier score, hit rate, review count) so decision quality is always in view.
+
+---
+
+## Congressional trade flow
+
+> *Every U.S. senator is legally required to disclose their trades. CORTEX aggregates the whole feed into buy/sell pressure.*
+
+<p align="center">
+  <img src="docs/screenshots/congress.png" alt="Congressional trade flow — monthly buy/sell flow, per-ticker pressure, and most active members" width="100%"/>
+</p>
+
+Disclosed trades are ingested from public Senate eFD filings and rolled into **monthly net buy/sell flow**, **per-ticker pressure**, and a **most-active-members** leaderboard with a buy/sell split. The median disclosure lag is surfaced directly — because alt-data that arrives 26 days late is a very different signal than one that arrives same-day, and the platform refuses to hide that.
+
+---
+
+## The volatility / dollar-swing screen
+
+> *Rank the universe by how much it actually moves — average daily swing, peak swing, consistency, and range position.*
+
+<p align="center">
+  <img src="docs/screenshots/swing.png" alt="Swing screen — universe ranked by dollar swing, consistency, and range position" width="100%"/>
+</p>
+
+A trading-oriented screen that scores each name on **dollar-swing magnitude, consistency, and where it sits in its range** — for sizing and timing decisions rather than long-horizon conviction. Sortable, filterable, and wired into the same per-ticker analysis as everything else.
+
+---
+
+## The CORTEX case — per ticker
+
+> *Click any candidate. The auto-built case shows the factor evidence, the trend snapshot, performance, and a falsifier — before you ever form an opinion.*
+
+<p align="center">
+  <img src="docs/screenshots/stock-modal.png" alt="Per-ticker CORTEX case — overview, factor breakdown, performance, and vault-grounded research" width="100%"/>
+</p>
+
+Each ticker opens a four-tab workspace: **Overview** (trend, momentum, trading activity, recent news), **Case** (the auto-built bull/risk argument with per-point z-scores), **CORTEX** (the 5-factor decomposition plus retrieved vault research), and **Charts** (price, volume, RSI). The *AI Reasoning* path grounds its analysis in locally-embedded research notes — no external embedding API.
+
+---
+
+## Decision quality & calibration
+
+> *You must state in advance what would prove you wrong. Then the platform scores how well-calibrated you actually are.*
+
+<p align="center">
+  <img src="docs/screenshots/calibration.png" alt="Calibration — reliability diagram, hit rate by conviction bucket, and per-author Brier score" width="100%"/>
+</p>
+
+Investing decisions are logged as **theses** with a required, explicit *falsifier* and a *review date*. A calibration engine then scores forecasting using **Brier scores** and per-conviction hit-rate buckets, plotting a reliability diagram that flags systematic over-confidence. A **process score** separates decision *quality* from outcome — a good decision with a bad result is still a good decision. A review queue surfaces theses whose review date has passed.
 
 ---
 
@@ -43,7 +100,7 @@ honesty about edge. It was built to demonstrate, in one codebase:
                     └───────────────────────┬─────────────────────┘
                                             │  one origin, port 8000
                     ┌───────────────────────┴─────────────────────┐
-                    │  FastAPI service  (src/wst/api.py)           │
+                    │  FastAPI service  (src/cortex/api.py)        │
                     │  serves the built SPA + a typed JSON API     │
                     └───────────────────────┬─────────────────────┘
           ┌─────────────────┬───────────────┼───────────────┬─────────────────┐
@@ -66,7 +123,7 @@ honesty about edge. It was built to demonstrate, in one codebase:
 fastembed (local embeddings) · scikit-learn · React 18 · Vite · TypeScript ·
 TanStack Query · lightweight-charts · Recharts. Tooling: `uv`, `ruff`, `pyright`.
 
-The whole thing runs as one command (`wst serve`) on `127.0.0.1` — the API and the
+The whole thing runs as one command (`cortex serve`) on `127.0.0.1` — the API and the
 compiled SPA share a single origin and process.
 
 ---
@@ -92,7 +149,7 @@ activist stakes. The exact composite weighting is intentionally not documented h
 
 ### Pre-registered backtest harness
 
-The differentiator. `wst backtest` and `wst congress-oos` evaluate factors against a
+The differentiator. `cortex backtest` and `cortex congress-oos` evaluate factors against a
 **pre-registered hypothesis and an out-of-sample window**, and apply a
 multiple-testing-corrected significance gate. A factor is only called "real" when its
 information-coefficient t-statistic clears the bar — anything below is treated as noise.
@@ -102,29 +159,6 @@ current-membership universe, sparse coverage on alt-data factors, transaction-co
 assumptions) **in the output itself**. As of the latest run no candidate factor clears
 the bar, so the platform does no live trading. Honest negative results, surfaced rather
 than buried.
-
-### Decision-quality system
-
-Investing decisions are logged as **theses** with a required, explicit *falsifier* and a
-*review date* — you must state in advance what would prove you wrong. A calibration
-engine then scores the operator's forecasting using **Brier scores** and per-conviction
-hit-rate buckets, flagging systematic over-confidence. Dissents can be attached to any
-thesis to capture the bear case. A review queue surfaces theses whose review date has
-passed.
-
-### Research RAG
-
-Markdown research notes are chunked, embedded locally with `fastembed`, and indexed in
-DuckDB's native vector-search extension (HNSW). Context retrieval grounds the
-per-ticker analysis without any external embedding API.
-
-### Glass-premium portal
-
-A dark-only, anti-action-bias React portal (see [`DESIGN.md`](DESIGN.md) for the locked
-design system): a CORTEX command-center dashboard with live factor z-score meters,
-congressional-flow analytics, a volatility/dollar-swing screen, the calibration
-reliability diagram, and thesis management. Gains and losses are rendered in *muted*
-green/red on purpose — the UI signals direction, never excitement.
 
 ---
 
@@ -155,24 +189,24 @@ right that most tutorials get wrong:
 uv sync
 
 # 2. Provide an SEC contact identity (required by SEC fair-access policy)
-#    Set WST_SEC_USER_AGENT to "Your Name your-email@example.com" in a .env file.
+#    Set CORTEX_SEC_USER_AGENT to "Your Name your-email@example.com" in a .env file.
 
 # 3. Initialise the columnar store
-uv run wst db-init
+uv run cortex db-init
 
 # 4. (optional) Ingest public data — all free sources
-uv run wst congress-sync          # Senate disclosures
-uv run wst insiders-sync          # Form 4 open-market buys
-uv run wst funds-sync             # 13F institutional flow
-uv run wst fundamentals-sync      # point-in-time EDGAR fundamentals
+uv run cortex congress-sync          # Senate disclosures
+uv run cortex insiders-sync          # Form 4 open-market buys
+uv run cortex funds-sync             # 13F institutional flow
+uv run cortex fundamentals-sync      # point-in-time EDGAR fundamentals
 
 # 5. Rank the universe and check the evidence
-uv run wst discover               # CORTEX multi-factor ranking
-uv run wst backtest               # pre-registered factor evaluation
+uv run cortex discover               # CORTEX multi-factor ranking
+uv run cortex backtest               # pre-registered factor evaluation
 
 # 6. Build the portal and serve everything from one process
 (cd web && npm install && npm run build)
-uv run wst serve                  # http://127.0.0.1:8000
+uv run cortex serve                  # http://127.0.0.1:8000
 ```
 
 ### CLI surface
@@ -181,21 +215,21 @@ uv run wst serve                  # http://127.0.0.1:8000
 `vol-screen` · `congress-sync` · `funds-sync` · `funds-backfill` · `insiders-sync` ·
 `activism-sync` · `fundamentals-sync` · `congress-oos` · `backtest` · `serve`
 
-Run `uv run wst <command> --help` for arguments.
+Run `uv run cortex <command> --help` for arguments.
 
 ### Configuration
 
 All runtime config comes from the environment (or a local, git-ignored `.env`). Nothing
 sensitive is committed.
 
-| Variable              | Purpose                                              |
-|-----------------------|------------------------------------------------------|
-| `WST_SEC_USER_AGENT`  | SEC EDGAR contact identity (`Name email`) — required |
-| `WST_DUCKDB_PATH`     | Override the DuckDB path (must end in `.db`)         |
-| `WST_VAULT_DIR`       | Markdown mirror output directory                     |
-| `WST_RESEARCH_DIR`    | Research-note source for the RAG index               |
-| `WST_CLAUDE_BIN`      | Explicit path to the `claude` CLI (LLM analysis)     |
-| `VITE_LOGODEV_TOKEN`  | Optional logo enhancement; UI falls back to monograms|
+| Variable                 | Purpose                                              |
+|--------------------------|------------------------------------------------------|
+| `CORTEX_SEC_USER_AGENT`  | SEC EDGAR contact identity (`Name email`) — required |
+| `CORTEX_DUCKDB_PATH`     | Override the DuckDB path (must end in `.db`)         |
+| `CORTEX_VAULT_DIR`       | Markdown mirror output directory                     |
+| `CORTEX_RESEARCH_DIR`    | Research-note source for the RAG index               |
+| `CORTEX_CLAUDE_BIN`      | Explicit path to the `claude` CLI (LLM analysis)     |
+| `VITE_LOGODEV_TOKEN`     | Optional logo enhancement; UI falls back to monograms|
 
 ---
 
@@ -236,10 +270,17 @@ This repository is published as a portfolio piece and is hardened accordingly:
 
 ## Disclaimer
 
-WST is a personal research and decision-support tool. It is **not financial advice**, it
+CORTEX is a personal research and decision-support tool. It is **not financial advice**, it
 does not execute trades, and it makes no recommendations. Nothing here is an offer or
 solicitation. Markets are risky; past performance does not predict future results.
 
 ---
 
-© Rob Savage. Source provided for portfolio review. All rights reserved.
+## License
+
+**Source-available, all rights reserved.** This repository is published for portfolio
+review and evaluation only. You may read the code; you may **not** copy, modify, reuse,
+redistribute, or deploy it (in whole or in part) without prior written permission. See
+[`LICENSE`](LICENSE) for the full terms.
+
+© Rob Savage. All rights reserved.

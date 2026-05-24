@@ -11,7 +11,7 @@
     {
       "name": "api",
       "runtimeExecutable": "uv",
-      "runtimeArgs": ["run", "wst", "serve", "--port", "8000"],
+      "runtimeArgs": ["run", "cortex", "serve", "--port", "8000"],
       "port": 8000
     }
   ]

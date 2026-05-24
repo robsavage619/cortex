@@ -1,0 +1,38 @@
+CORTEX — Source-Available License
+Copyright (c) 2026 Rob Savage. All rights reserved.
+
+This software and its source code (the "Software") are made publicly viewable
+for the sole purposes of portfolio review, evaluation, and demonstration of the
+author's engineering work.
+
+GRANT
+You are permitted to:
+  - View and read the source code.
+  - Clone the repository locally for the limited purpose of reading and
+    evaluating it.
+
+RESTRICTIONS
+Except with the prior, explicit, written permission of the copyright holder, you
+may NOT:
+  - Use the Software, in whole or in part, for any personal, academic,
+    commercial, or production purpose;
+  - Copy, reproduce, or republish the Software or any substantial portion of it;
+  - Modify, adapt, translate, or create derivative works based on the Software;
+  - Distribute, sublicense, sell, rent, lease, or otherwise transfer the
+    Software or access to it;
+  - Deploy, host, or operate the Software or any service derived from it;
+  - Remove or alter any copyright, attribution, or proprietary notice.
+
+No license or right is granted by implication, estoppel, or otherwise other than
+the limited viewing and evaluation rights expressly stated above. All rights not
+expressly granted are reserved by the copyright holder.
+
+NO WARRANTY
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT. IN NO EVENT SHALL THE COPYRIGHT
+HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM, OUT OF, OR IN CONNECTION WITH THE
+SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+For licensing inquiries, contact the copyright holder.

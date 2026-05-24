@@ -20,8 +20,7 @@ import { StockModal } from '@/views/StockModal'
 // ── Cortex case panel (expanded row) ─────────────────────────────────────────
 
 function CortexCase({ ticker }: { ticker: string }) {
-  const { data, isLoading } = useCase(ticker)
-  const c = data?.case
+  const { data: c, isLoading } = useCase(ticker)
 
   if (isLoading) {
     return (
