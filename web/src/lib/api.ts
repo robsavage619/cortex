@@ -11,6 +11,7 @@ import type {
   CandidatesResponse,
   CaseResponse,
   CongressResponse,
+  CongressStatsResponse,
   Digest,
   DissentIn,
   FundsResponse,
@@ -44,6 +45,7 @@ const keys = {
   case: (ticker: string) => ['case', ticker] as const,
   tickerResearch: (ticker: string) => ['ticker-research', ticker] as const,
   congress: (ticker: string | null, days: number) => ['congress', ticker, days] as const,
+  congressStats: (days: number) => ['congress-stats', days] as const,
   funds: (ticker: string | null) => ['funds', ticker] as const,
   refreshStatus: ['refresh-status'] as const,
 }
@@ -260,6 +262,19 @@ export function useCongress(ticker: string | null = null, days = 120) {
     queryFn: async () => {
       const { data } = await http.get<CongressResponse>('/congress', {
         params: { ticker: ticker ?? undefined, days },
+      })
+      return data
+    },
+  })
+}
+
+export function useCongressStats(days = 365) {
+  return useQuery({
+    queryKey: keys.congressStats(days),
+    staleTime: 5 * 60_000,
+    queryFn: async () => {
+      const { data } = await http.get<CongressStatsResponse>('/congress/stats', {
+        params: { days },
       })
       return data
     },

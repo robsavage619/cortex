@@ -18,10 +18,22 @@ import wst.discovery as discovery
 import wst.review as rev
 import wst.thesis as th
 from wst.config import load_settings
+from wst.storage.db import connect
+from wst.storage.schemas import apply_schema
 
 log = logging.getLogger(__name__)
 
 _WEB_DIST = Path(__file__).parents[2] / "web" / "dist"
+
+
+def _apply_schema_on_startup() -> None:
+    from contextlib import suppress
+    with suppress(Exception):
+        with connect(load_settings().duckdb_path) as conn:
+            apply_schema(conn)
+
+
+_apply_schema_on_startup()
 
 app = FastAPI(title="WST — Wall Street Tracker", version="0.1.0")
 
@@ -248,8 +260,16 @@ def _volstock_out(s: Any) -> dict[str, Any]:
         "range_consistency": s.range_consistency,
         "avg_range_pct": s.avg_range_pct,
         "avg_close": s.avg_close,
+        "oscillation_score": s.oscillation_score,
+        "net_drift_pct": s.net_drift_pct,
+        "range_position": s.range_position,
+        "direction_changes": s.direction_changes,
+        "avg_volume": s.avg_volume,
         "ari_special_score": s.ari_special_score,
         "rank": s.rank,
+        "company_name": s.company_name,
+        "max_range_pct": s.max_range_pct,
+        "max_dollar_range": s.max_dollar_range,
     }
 
 
@@ -526,6 +546,14 @@ def price_history(ticker: str, period: str = "6mo") -> dict[str, Any]:
             for b in bars
         ],
     }
+
+
+@app.get("/congress/stats")
+def get_congress_stats(days: int = 365) -> dict[str, Any]:
+    """Aggregated Senate-trade analytics over a trailing window."""
+    from wst.sources.congress import congress_stats
+
+    return {"banner": _BANNER, "days": days, **congress_stats(_db(), days=days)}
 
 
 @app.get("/congress")

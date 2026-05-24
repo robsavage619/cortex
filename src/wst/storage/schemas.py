@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import duckdb
 
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 11
 
 DDL_STATEMENTS = (
     """
@@ -164,8 +164,16 @@ DDL_STATEMENTS = (
         range_consistency  DOUBLE,
         avg_range_pct      DOUBLE,
         avg_close          DOUBLE,
+        oscillation_score  DOUBLE,
+        net_drift_pct      DOUBLE,
+        range_position     DOUBLE,
+        direction_changes  INTEGER,
+        avg_volume         DOUBLE,
         ari_special_score  DOUBLE    NOT NULL,
-        rank               INTEGER   NOT NULL
+        rank               INTEGER   NOT NULL,
+        company_name       VARCHAR,
+        max_range_pct      DOUBLE,
+        max_dollar_range   DOUBLE
     )
     """,
 )
@@ -179,6 +187,14 @@ MIGRATION_STATEMENTS = (
     "ALTER TABLE theses ADD COLUMN IF NOT EXISTS why_now VARCHAR",
     "ALTER TABLE theses ADD COLUMN IF NOT EXISTS activate_at TIMESTAMP",
     "ALTER TABLE reviews ADD COLUMN IF NOT EXISTS decision_quality VARCHAR",
+    "ALTER TABLE volatility_screen ADD COLUMN IF NOT EXISTS oscillation_score DOUBLE",
+    "ALTER TABLE volatility_screen ADD COLUMN IF NOT EXISTS net_drift_pct DOUBLE",
+    "ALTER TABLE volatility_screen ADD COLUMN IF NOT EXISTS range_position DOUBLE",
+    "ALTER TABLE volatility_screen ADD COLUMN IF NOT EXISTS direction_changes INTEGER",
+    "ALTER TABLE volatility_screen ADD COLUMN IF NOT EXISTS avg_volume DOUBLE",
+    "ALTER TABLE volatility_screen ADD COLUMN IF NOT EXISTS company_name VARCHAR",
+    "ALTER TABLE volatility_screen ADD COLUMN IF NOT EXISTS max_range_pct DOUBLE",
+    "ALTER TABLE volatility_screen ADD COLUMN IF NOT EXISTS max_dollar_range DOUBLE",
 )
 
 

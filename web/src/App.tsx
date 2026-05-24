@@ -4,6 +4,7 @@ import { BrowserRouter, Route, Routes } from 'react-router-dom'
 import { Layout } from '@/components/Layout'
 import { AriSpecial } from '@/views/AriSpecial'
 import { Calibration } from '@/views/Calibration'
+import { Congress } from '@/views/Congress'
 import { Dashboard } from '@/views/Dashboard'
 import { NewThesis } from '@/views/NewThesis'
 import { ReviewQueue } from '@/views/ReviewQueue'
@@ -23,6 +24,7 @@ export default function App() {
             <Route path="thesis/:id" element={<ThesisDetail />} />
             <Route path="new" element={<NewThesis />} />
             <Route path="ari-special" element={<AriSpecial />} />
+            <Route path="congress" element={<Congress />} />
             <Route path="calibration" element={<Calibration />} />
             <Route path="review" element={<ReviewQueue />} />
           </Route>

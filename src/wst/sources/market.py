@@ -37,19 +37,26 @@ class MarketSourceError(Exception):
 
 
 _VALID_PERIODS = frozenset(
-    {"1mo", "3mo", "6mo", "1y", "2y", "5y", "ytd", "max"}
+    {"1d", "5d", "1mo", "3mo", "6mo", "1y", "2y", "5y", "ytd", "max"}
 )
+
+# yfinance interval to use per period. Intraday periods need finer resolution.
+_PERIOD_INTERVAL: dict[str, str] = {
+    "1d": "5m",
+    "5d": "1h",
+}
 
 
 def history_for(ticker: str, *, period: str = "6mo") -> list[PriceBar]:
-    """Fetch daily OHLC history for ticker via yfinance (free, no key).
+    """Fetch OHLC history for ticker via yfinance (free, no key).
 
     Args:
         ticker: Symbol to fetch.
-        period: yfinance period window (e.g. ``6mo``, ``1y``).
+        period: yfinance period window (e.g. ``1d``, ``5d``, ``6mo``, ``1y``).
 
     Returns:
-        Daily price bars, oldest first. Empty if yfinance returns nothing.
+        Price bars oldest first. Intraday periods (1d, 5d) return sub-daily
+        bars; the ``date`` field is ``YYYY-MM-DD HH:MM`` for those.
 
     Raises:
         MarketSourceError: On an invalid period or a fetch/parse failure.
@@ -64,8 +71,11 @@ def history_for(ticker: str, *, period: str = "6mo") -> list[PriceBar]:
     except ImportError as exc:
         raise MarketSourceError("yfinance is not installed") from exc
 
+    interval = _PERIOD_INTERVAL.get(period, "1d")
+    intraday = interval != "1d"
+
     try:
-        frame = yf.Ticker(ticker).history(period=period, interval="1d")
+        frame = yf.Ticker(ticker).history(period=period, interval=interval)
     except Exception as exc:
         raise MarketSourceError(
             f"yfinance history failed for {ticker}: {exc}"
@@ -77,9 +87,18 @@ def history_for(ticker: str, *, period: str = "6mo") -> list[PriceBar]:
         if close is None:
             continue
         ts: Any = idx
+        if intraday:
+            # Normalize to local naive datetime string "YYYY-MM-DD HH:MM"
+            try:
+                dt = ts.to_pydatetime().astimezone(None).replace(tzinfo=None)
+                date_str = dt.strftime("%Y-%m-%d %H:%M")
+            except Exception:
+                date_str = str(ts)[:16]
+        else:
+            date_str = ts.date().isoformat()
         bars.append(
             PriceBar(
-                date=ts.date().isoformat(),
+                date=date_str,
                 open=_as_float(row.get("Open")) or close,
                 high=_as_float(row.get("High")) or close,
                 low=_as_float(row.get("Low")) or close,

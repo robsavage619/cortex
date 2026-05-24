@@ -20,6 +20,26 @@ _FALLBACK: list[str] = [
 ]
 
 
+def _wiki_tickers(url: str, table_id: str) -> list[str]:
+    import io
+
+    import pandas as pd
+    import requests
+
+    resp = requests.get(
+        url,
+        headers={"User-Agent": "Mozilla/5.0 (compatible; wst-universe-fetch/1.0)"},
+        timeout=15,
+    )
+    resp.raise_for_status()
+    tables = pd.read_html(io.StringIO(resp.text), attrs={"id": table_id})
+    return (
+        tables[0]["Symbol"]
+        .str.replace(".", "-", regex=False)
+        .tolist()
+    )
+
+
 @lru_cache(maxsize=1)
 def sp500_tickers() -> list[str]:
     """Return S&P 500 constituent tickers.
@@ -29,27 +49,57 @@ def sp500_tickers() -> list[str]:
     the request fails for any reason.
     """
     try:
-        import io
-
-        import pandas as pd
-        import requests
-
-        resp = requests.get(
+        tickers = _wiki_tickers(
             "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies",
-            headers={"User-Agent": "Mozilla/5.0 (compatible; wst-universe-fetch/1.0)"},
-            timeout=15,
+            "constituents",
         )
-        resp.raise_for_status()
-        tables = pd.read_html(io.StringIO(resp.text), attrs={"id": "constituents"})
-        tickers: list[str] = (
-            tables[0]["Symbol"]
-            .str.replace(".", "-", regex=False)
-            .tolist()
-        )
-        log.info("Universe: loaded %d tickers from Wikipedia", len(tickers))
+        log.info("Universe: loaded %d S&P 500 tickers from Wikipedia", len(tickers))
         return tickers
     except Exception as exc:
         log.warning(
             "Wikipedia S&P 500 fetch failed (%s) — using fallback universe", exc
         )
         return list(_FALLBACK)
+
+
+@lru_cache(maxsize=1)
+def sp400_tickers() -> list[str]:
+    """Return S&P 400 mid-cap constituent tickers (Wikipedia, with empty fallback)."""
+    try:
+        tickers = _wiki_tickers(
+            "https://en.wikipedia.org/wiki/List_of_S%26P_400_companies",
+            "constituents",
+        )
+        log.info("Universe: loaded %d S&P 400 tickers from Wikipedia", len(tickers))
+        return tickers
+    except Exception as exc:
+        log.warning("Wikipedia S&P 400 fetch failed (%s) — skipping mid-caps", exc)
+        return []
+
+
+@lru_cache(maxsize=1)
+def sp600_tickers() -> list[str]:
+    """Return S&P 600 small-cap constituent tickers (Wikipedia, with empty fallback)."""
+    try:
+        tickers = _wiki_tickers(
+            "https://en.wikipedia.org/wiki/List_of_S%26P_600_companies",
+            "constituents",
+        )
+        log.info("Universe: loaded %d S&P 600 tickers from Wikipedia", len(tickers))
+        return tickers
+    except Exception as exc:
+        log.warning("Wikipedia S&P 600 fetch failed (%s) — skipping small-caps", exc)
+        return []
+
+
+@lru_cache(maxsize=1)
+def composite_tickers() -> list[str]:
+    """Return deduplicated S&P 500 + S&P 400 + S&P 600 tickers (≈1500 names)."""
+    seen: set[str] = set()
+    out: list[str] = []
+    for t in sp500_tickers() + sp400_tickers() + sp600_tickers():
+        if t not in seen:
+            seen.add(t)
+            out.append(t)
+    log.info("Universe: composite = %d tickers", len(out))
+    return out

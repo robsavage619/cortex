@@ -517,3 +517,174 @@ def list_trades(
         )
         for r in rows
     ]
+
+
+# ── aggregate stats (for the Congress dashboard) ──────────────────────────────
+
+_AMOUNT_NUM_RE = re.compile(r"\$?\s*([\d,]+)")
+
+
+def _amount_midpoint(amount: str | None) -> float:
+    """Map a Senate dollar-range string to a midpoint notional (USD)."""
+    nums = [
+        float(x.replace(",", ""))
+        for x in _AMOUNT_NUM_RE.findall(amount or "")
+        if x.replace(",", "").isdigit()
+    ]
+    if not nums:
+        return 0.0
+    if len(nums) == 1:
+        return nums[0]
+    return (nums[0] + nums[1]) / 2.0
+
+
+def _trade_sign(transaction_type: str | None) -> int:
+    t = (transaction_type or "").lower()
+    if "purchase" in t:
+        return 1
+    if "sale" in t:
+        return -1
+    return 0
+
+
+def congress_stats(db_path: Path, *, days: int = 365) -> dict[str, Any]:
+    """Aggregate Senate trades into dashboard-ready summaries.
+
+    Returns totals, a monthly buy/sell flow timeline, the most-traded tickers
+    and most-active members (each split by buy/sell notional), and a
+    distribution of disclosure lag (transaction → disclosure delay in days).
+    Notional uses the midpoint of each filing's dollar-range bracket.
+    """
+    from collections import defaultdict
+
+    from wst.storage.db import connect
+
+    since = recent_window(days)
+    with connect(db_path, read_only=True) as conn:
+        rows = conn.execute(
+            """
+            SELECT senator, ticker, transaction_type, amount,
+                   transaction_date, disclosure_date
+            FROM congress_trades
+            WHERE COALESCE(disclosure_date, transaction_date) >= ?
+            """,
+            [since],
+        ).fetchall()
+
+    buys = sells = 0
+    buy_notional = sell_notional = 0.0
+    members: set[str] = set()
+    months: dict[str, dict[str, float]] = defaultdict(
+        lambda: {"buys": 0, "sells": 0, "buy_notional": 0.0, "sell_notional": 0.0}
+    )
+    by_ticker: dict[str, dict[str, float]] = defaultdict(
+        lambda: {"count": 0, "buy_notional": 0.0, "sell_notional": 0.0}
+    )
+    ticker_buyers: dict[str, set[str]] = defaultdict(set)
+    ticker_sellers: dict[str, set[str]] = defaultdict(set)
+    ticker_last: dict[str, date] = {}
+    by_member: dict[str, dict[str, float]] = defaultdict(
+        lambda: {"count": 0, "buy_notional": 0.0, "sell_notional": 0.0}
+    )
+    lag_buckets = {"<=30": 0, "31-45": 0, "46-90": 0, ">90": 0}
+    lags: list[int] = []
+
+    for senator, ticker, ttype, amount, txn, disc in rows:
+        sign = _trade_sign(ttype)
+        if sign == 0:
+            continue
+        notional = _amount_midpoint(amount)
+        when = disc or txn
+        members.add(senator)
+        tkey = (ticker or "").upper()
+        month = when.strftime("%Y-%m") if when else "unknown"
+
+        if sign > 0:
+            buys += 1
+            buy_notional += notional
+            months[month]["buys"] += 1
+            months[month]["buy_notional"] += notional
+            by_ticker[tkey]["buy_notional"] += notional
+            by_member[senator]["buy_notional"] += notional
+            ticker_buyers[tkey].add(senator)
+        else:
+            sells += 1
+            sell_notional += notional
+            months[month]["sells"] += 1
+            months[month]["sell_notional"] += notional
+            by_ticker[tkey]["sell_notional"] += notional
+            by_member[senator]["sell_notional"] += notional
+            ticker_sellers[tkey].add(senator)
+        by_ticker[tkey]["count"] += 1
+        by_member[senator]["count"] += 1
+        if when is not None and (tkey not in ticker_last or when > ticker_last[tkey]):
+            ticker_last[tkey] = when
+
+        if disc and txn:
+            lag = (disc - txn).days
+            if lag >= 0:
+                lags.append(lag)
+                if lag <= 30:
+                    lag_buckets["<=30"] += 1
+                elif lag <= 45:
+                    lag_buckets["31-45"] += 1
+                elif lag <= 90:
+                    lag_buckets["46-90"] += 1
+                else:
+                    lag_buckets[">90"] += 1
+
+    timeline = [
+        {"month": m, **{k: round(v, 2) for k, v in vals.items()}}
+        for m, vals in sorted(months.items())
+        if m != "unknown"
+    ]
+    top_tickers = sorted(
+        (
+            {
+                "ticker": t,
+                "count": int(v["count"]),
+                "buy_notional": round(v["buy_notional"], 2),
+                "sell_notional": round(v["sell_notional"], 2),
+                "net_notional": round(v["buy_notional"] - v["sell_notional"], 2),
+                "buyers": len(ticker_buyers[t]),
+                "sellers": len(ticker_sellers[t]),
+                "last_disclosure": (
+                    ticker_last[t].isoformat() if t in ticker_last else None
+                ),
+            }
+            for t, v in by_ticker.items()
+        ),
+        key=lambda r: abs(r["net_notional"]),
+        reverse=True,
+    )[:25]
+    top_members = sorted(
+        (
+            {
+                "senator": s,
+                "count": int(v["count"]),
+                "buy_notional": round(v["buy_notional"], 2),
+                "sell_notional": round(v["sell_notional"], 2),
+            }
+            for s, v in by_member.items()
+        ),
+        key=lambda r: r["count"],
+        reverse=True,
+    )[:15]
+    median_lag = int(sorted(lags)[len(lags) // 2]) if lags else None
+
+    return {
+        "totals": {
+            "trades": buys + sells,
+            "buys": buys,
+            "sells": sells,
+            "buy_notional": round(buy_notional, 2),
+            "sell_notional": round(sell_notional, 2),
+            "members": len(members),
+            "tickers": len(by_ticker),
+            "median_disclosure_lag_days": median_lag,
+        },
+        "timeline": timeline,
+        "top_tickers": top_tickers,
+        "top_members": top_members,
+        "disclosure_lag": lag_buckets,
+    }

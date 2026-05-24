@@ -206,8 +206,16 @@ export interface VolStock {
   range_consistency: number | null
   avg_range_pct: number | null
   avg_close: number | null
+  oscillation_score: number | null
+  net_drift_pct: number | null
+  range_position: number | null
+  direction_changes: number | null
+  avg_volume: number | null
   ari_special_score: number
   rank: number
+  company_name: string | null
+  max_range_pct: number | null
+  max_dollar_range: number | null
 }
 
 export interface VolScreenResponse {
@@ -284,6 +292,53 @@ export interface CongressResponse {
   ticker: string | null
   count: number
   trades: CongressTrade[]
+}
+
+export interface CongressTotals {
+  trades: number
+  buys: number
+  sells: number
+  buy_notional: number
+  sell_notional: number
+  members: number
+  tickers: number
+  median_disclosure_lag_days: number | null
+}
+
+export interface CongressMonth {
+  month: string
+  buys: number
+  sells: number
+  buy_notional: number
+  sell_notional: number
+}
+
+export interface CongressTickerStat {
+  ticker: string
+  count: number
+  buy_notional: number
+  sell_notional: number
+  net_notional: number
+  buyers: number
+  sellers: number
+  last_disclosure: string | null
+}
+
+export interface CongressMemberStat {
+  senator: string
+  count: number
+  buy_notional: number
+  sell_notional: number
+}
+
+export interface CongressStatsResponse {
+  banner: string
+  days: number
+  totals: CongressTotals
+  timeline: CongressMonth[]
+  top_tickers: CongressTickerStat[]
+  top_members: CongressMemberStat[]
+  disclosure_lag: Record<string, number>
 }
 
 export interface FundMove {
