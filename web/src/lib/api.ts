@@ -25,6 +25,7 @@ import type {
   ThesisPatch,
   TickerContext,
   TickerResearch,
+  VolScreenResponse,
 } from './types'
 
 export const http = axios.create({ baseURL: '/api' })
@@ -38,6 +39,7 @@ const keys = {
   history: (ticker: string, period: string) => ['history', ticker, period] as const,
   digest: ['digest'] as const,
   candidates: ['candidates'] as const,
+  volatilityScreen: ['volatility-screen'] as const,
   candidate: (ticker: string) => ['candidate', ticker] as const,
   case: (ticker: string) => ['case', ticker] as const,
   tickerResearch: (ticker: string) => ['ticker-research', ticker] as const,

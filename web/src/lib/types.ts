@@ -197,6 +197,27 @@ export interface CandidatesResponse {
   count: number
 }
 
+export interface VolStock {
+  ticker: string
+  as_of_date: string
+  computed_at: string
+  lookback_days: number
+  avg_dollar_range: number | null
+  range_consistency: number | null
+  avg_range_pct: number | null
+  avg_close: number | null
+  ari_special_score: number
+  rank: number
+}
+
+export interface VolScreenResponse {
+  banner: string
+  stocks: VolStock[]
+  last_run: string | null
+  lookback_days: number | null
+  count: number
+}
+
 export interface CandidateResponse {
   banner: string
   ticker: string

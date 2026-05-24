@@ -381,6 +381,25 @@ def main() -> None:
         help="Shortlist size before fundamentals (default: 150)",
     )
 
+    vol_p = sub.add_parser(
+        "vol-screen",
+        help="Run the Ari Special — stocks with large, consistent daily $ swings",
+    )
+    vol_p.add_argument(
+        "--top-n",
+        type=int,
+        default=40,
+        metavar="N",
+        help="Number of stocks to keep (default: 40)",
+    )
+    vol_p.add_argument(
+        "--lookback-days",
+        type=int,
+        default=15,
+        metavar="N",
+        help="Trading-day window, floored at 10 / two weeks (default: 15)",
+    )
+
     congress_p = sub.add_parser("congress-sync", help="Scrape Senate eFD into the DB")
     congress_p.add_argument(
         "--since-days",
@@ -478,6 +497,7 @@ def main() -> None:
         "mirror": _cmd_mirror,
         "rag-index": _cmd_rag_index,
         "discover": _cmd_discover,
+        "vol-screen": _cmd_vol_screen,
         "congress-sync": _cmd_congress_sync,
         "funds-sync": _cmd_funds_sync,
         "funds-backfill": _cmd_funds_backfill,
