@@ -336,9 +336,11 @@ def _cmd_vol_screen(args: argparse.Namespace) -> None:
     )
     print(f"Ari Special — top {len(stocks)} by consistent dollar swing")
     for s in stocks:
-        adr = f"${s.avg_dollar_range:.2f}" if s.avg_dollar_range is not None else "    —"
-        cons = f"{s.range_consistency:.2f}" if s.range_consistency is not None else "  —"
-        pct = f"{s.avg_range_pct * 100:.1f}%" if s.avg_range_pct is not None else "  —"
+        adr = f"${s.avg_dollar_range:.2f}" if s.avg_dollar_range is not None else "—"
+        cons = (
+            f"{s.range_consistency:.2f}" if s.range_consistency is not None else "—"
+        )
+        pct = f"{s.avg_range_pct * 100:.1f}%" if s.avg_range_pct is not None else "—"
         print(
             f"  #{s.rank:2d} {s.ticker:<6} score={s.ari_special_score:7.3f}"
             f"  adr={adr:>9}  consistency={cons}  range={pct}"

@@ -48,7 +48,6 @@ def _compute_metrics(
     Returns a dict keyed by ticker with keys: avg_dollar_range,
     range_consistency, avg_range_pct, avg_close, ari_special_score.
     """
-    import numpy as np
     import yfinance as yf
 
     log.info("Downloading 3mo OHLC for %d tickers…", len(tickers))
@@ -60,24 +59,20 @@ def _compute_metrics(
         threads=True,
     )
 
-    # yf.download gives MultiIndex columns (field, ticker) for >1 ticker.
-    def _frame_for(ticker: str) -> Any | None:
-        try:
-            if len(tickers) == 1:
-                highs = raw["High"]
-                lows = raw["Low"]
-                closes = raw["Close"]
-            else:
-                highs = raw["High"][ticker]
-                lows = raw["Low"][ticker]
-                closes = raw["Close"][ticker]
-        except (KeyError, TypeError):
-            return None
-        return highs, lows, closes
+    # yf.download gives MultiIndex columns (field, ticker) for >1 ticker and a
+    # single-level frame for one ticker. Normalise each field to a frame keyed
+    # by ticker so the per-ticker loop can index uniformly.
+    if len(tickers) == 1:
+        highs_df = raw[["High"]].rename(columns={"High": tickers[0]})
+        lows_df = raw[["Low"]].rename(columns={"Low": tickers[0]})
+        closes_df = raw[["Close"]].rename(columns={"Close": tickers[0]})
+    else:
+        highs_df = raw["High"]
+        lows_df = raw["Low"]
+        closes_df = raw["Close"]
 
     results: dict[str, dict[str, Any]] = {}
     for ticker in tickers:
-        frame = _frame_for(ticker)
         empty = {
             "avg_dollar_range": None,
             "range_consistency": None,
@@ -85,13 +80,12 @@ def _compute_metrics(
             "avg_close": None,
             "ari_special_score": 0.0,
         }
-        if frame is None:
+        if ticker not in closes_df.columns or ticker not in highs_df.columns:
             results[ticker] = empty
             continue
 
-        highs, lows, closes = frame
-        ranges = (highs - lows).dropna()
-        closes = closes.dropna()
+        ranges = (highs_df[ticker] - lows_df[ticker]).dropna()
+        closes = closes_df[ticker].dropna()
         if len(ranges) < lookback_days or len(closes) < lookback_days:
             results[ticker] = empty
             continue

@@ -1,4 +1,4 @@
-import { BarChart3, LayoutDashboard, ListChecks, PlusCircle } from 'lucide-react'
+import { Activity, BarChart3, LayoutDashboard, ListChecks, PlusCircle } from 'lucide-react'
 import { NavLink, Outlet } from 'react-router-dom'
 
 import { HeaderTicker } from '@/components/ui/HeaderTicker'
@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils'
 const nav = [
   { to: '/',            label: 'DASHBOARD',  icon: LayoutDashboard, end: true  },
   { to: '/review',      label: 'REVIEW',     icon: ListChecks,      end: false },
+  { to: '/ari-special', label: 'ARI SPECIAL', icon: Activity,       end: false },
   { to: '/calibration', label: 'CALIBRATE',  icon: BarChart3,       end: false },
   { to: '/new',         label: 'NEW THESIS', icon: PlusCircle,      end: false },
 ]
