@@ -521,6 +521,41 @@ def context(ticker: str) -> dict[str, Any]:
     except Exception as exc:  # noqa: BLE001 - degrade visibly, never block context
         result["senate_trades_error"] = str(exc)
 
+    try:
+        from cortex.sources.insiders import list_insider_buys
+
+        buys = list_insider_buys(_db(), ticker=ticker, limit=10)
+        result["insider_buys"] = [
+            {
+                "filer_name": b.filer_name,
+                "filer_role": b.filer_role,
+                "transaction_date": (
+                    b.transaction_date.isoformat() if b.transaction_date else None
+                ),
+                "shares": b.shares,
+                "value_usd": b.value_usd,
+            }
+            for b in buys
+        ]
+    except Exception as exc:  # noqa: BLE001
+        result["insider_buys_error"] = str(exc)
+
+    try:
+        from cortex.sources.activism import list_activism_events
+
+        stakes = list_activism_events(_db(), ticker=ticker, limit=10)
+        result["activist_stakes"] = [
+            {
+                "filer": s.filer,
+                "filing_date": (
+                    s.filing_date.isoformat() if s.filing_date else None
+                ),
+            }
+            for s in stakes
+        ]
+    except Exception as exc:  # noqa: BLE001
+        result["activist_stakes_error"] = str(exc)
+
     return result
 
 

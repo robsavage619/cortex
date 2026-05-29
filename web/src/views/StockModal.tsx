@@ -14,7 +14,7 @@ import {
   useTickerContext,
   useTickerResearch,
 } from '@/lib/api'
-import type { Candidate, CasePoint, CortexFactor, MarketContext, PriceBar, StockReasoning, Thesis, TickerResearch } from '@/lib/types'
+import type { ActivistStake, Candidate, CasePoint, CortexFactor, InsiderBuy, MarketContext, PriceBar, StockReasoning, Thesis, TickerResearch } from '@/lib/types'
 import { cn, daysUntil, fmtDate, fmtPercent, fmtPrice, fmtSignedPercent } from '@/lib/utils'
 
 // ── Technical computations ─────────────────────────────────────────────────────
@@ -534,6 +534,61 @@ function OverviewTab({
                     {t.amount && <span className="num text-[10px] text-muted">{t.amount}</span>}
                     {t.transaction_date && (
                       <span className="num text-[9px] text-faint">{t.transaction_date}</span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Insider buys (Form 4) */}
+        {ctx?.insider_buys && ctx.insider_buys.length > 0 && (
+          <div className="space-y-2 rounded-sm border border-border-bright bg-surface-raised p-4">
+            <span className="label block">INSIDER BUYING</span>
+            <p className="font-sans text-[11px] text-muted">
+              Open-market purchases by officers, directors, and owners (Form 4). All are buys — filed within 2 days of the transaction.
+            </p>
+            <div className="space-y-1.5">
+              {(ctx.insider_buys as InsiderBuy[]).slice(0, 4).map((b, i) => (
+                <div key={i} className="flex items-center justify-between border-b border-border-dim pb-1.5">
+                  <div className="flex flex-col gap-0.5">
+                    <span className="font-sans text-[12px] text-ink">{b.filer_name}</span>
+                    <span className="num text-[9px] text-faint uppercase">{b.filer_role}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="num text-[10px] font-semibold text-up">
+                      ${b.value_usd >= 1_000_000
+                        ? `${(b.value_usd / 1_000_000).toFixed(1)}M`
+                        : b.value_usd >= 1_000
+                        ? `${(b.value_usd / 1_000).toFixed(0)}K`
+                        : b.value_usd.toFixed(0)}
+                    </span>
+                    {b.transaction_date && (
+                      <span className="num text-[9px] text-faint">{b.transaction_date}</span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Activist stakes (SC 13D) */}
+        {ctx?.activist_stakes && ctx.activist_stakes.length > 0 && (
+          <div className="space-y-2 rounded-sm border border-border-bright bg-surface-raised p-4">
+            <span className="label block">ACTIVIST STAKES</span>
+            <p className="font-sans text-[11px] text-muted">
+              SC 13D filings signal an investor has crossed 5% ownership with intent to influence management. Qualitative evidence only — excluded from the CORTEX composite.
+            </p>
+            <div className="space-y-1.5">
+              {(ctx.activist_stakes as ActivistStake[]).slice(0, 4).map((s, i) => (
+                <div key={i} className="flex items-center justify-between border-b border-border-dim pb-1.5">
+                  <span className="font-sans text-[12px] text-ink">{s.filer}</span>
+                  <div className="flex items-center gap-2">
+                    <span className="num text-[9px] text-faint uppercase tracking-wide text-cyan-400/70">SC 13D</span>
+                    {s.filing_date && (
+                      <span className="num text-[9px] text-faint">{s.filing_date}</span>
                     )}
                   </div>
                 </div>

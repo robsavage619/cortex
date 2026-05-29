@@ -146,6 +146,19 @@ export interface MarketContext {
   website: string | null
 }
 
+export interface InsiderBuy {
+  filer_name: string
+  filer_role: string
+  transaction_date: string | null
+  shares: number
+  value_usd: number
+}
+
+export interface ActivistStake {
+  filer: string
+  filing_date: string | null
+}
+
 export interface TickerContext {
   banner: string
   ticker: string
@@ -153,6 +166,10 @@ export interface TickerContext {
   market_error?: string
   senate_trades?: SenateTrade[]
   senate_trades_error?: string
+  insider_buys?: InsiderBuy[]
+  insider_buys_error?: string
+  activist_stakes?: ActivistStake[]
+  activist_stakes_error?: string
 }
 
 export interface PriceBar {
