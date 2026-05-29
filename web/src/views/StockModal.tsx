@@ -436,7 +436,7 @@ function OverviewTab({
   const volCtx = getVolumeContext(bars)
 
   return (
-    <div className="grid grid-cols-[1fr_340px] gap-0 overflow-y-auto">
+    <div className="grid grid-cols-[1fr_340px] gap-0 h-full">
       {/* Left column */}
       <div className="overflow-y-auto border-r border-border p-6 space-y-4">
 
@@ -726,7 +726,7 @@ function ChartsTab({
   const currentRSI = rsiVals[rsiVals.length - 1] ?? null
 
   return (
-    <div className="overflow-y-auto p-6 space-y-8">
+    <div className="h-full overflow-y-auto p-6 space-y-8">
 
       {/* Price chart + SMA */}
       <div className="space-y-3 rounded-sm border border-border-bright bg-surface-raised p-4">
@@ -861,7 +861,7 @@ function ThesisTab({
       : null
 
   return (
-    <div className="grid grid-cols-2 overflow-y-auto">
+    <div className="grid grid-cols-2 h-full">
       {/* Left: thesis content */}
       <div className="overflow-y-auto border-r border-border p-6 space-y-5">
 
@@ -1171,7 +1171,7 @@ function CortexTab({
   const compTone = comp >= 0.5 ? 'text-up' : comp >= 0 ? 'text-warn' : 'text-down'
 
   return (
-    <div className="overflow-y-auto p-6 space-y-6">
+    <div className="h-full overflow-y-auto p-6 space-y-6">
       {/* Composite header */}
       <div className="flex items-stretch gap-4">
         <div className="flex flex-col justify-center border border-border bg-bg-row px-5 py-3">
@@ -1365,7 +1365,7 @@ function CaseTab({ ticker }: { ticker: string }) {
   const compTone = comp >= 0.5 ? 'text-up' : comp >= 0 ? 'text-warn' : 'text-down'
 
   return (
-    <div className="overflow-y-auto p-6 space-y-6">
+    <div className="h-full overflow-y-auto p-6 space-y-6">
       <div className="space-y-1">
         <span className="font-sans text-[15px] font-semibold text-cyan">{caseData.headline}</span>
         <p className="font-sans text-[13px] leading-relaxed text-ink border-l-2 border-cyan/50 pl-3">
@@ -1622,28 +1622,30 @@ export function StockModal({
         </div>
 
         {/* ── Tab content ── */}
-        <div className="min-h-0 flex-1 overflow-hidden">
-          {tab === 'overview' && (
-            <OverviewTab thesis={thesis} bars={barsYear} market={market} ctx={ctx} reasoning={reasoning} />
-          )}
-          {tab === 'case' && (
-            <CaseTab ticker={lead} />
-          )}
-          {tab === 'cortex' && (
-            <CortexTab candidate={candidate} research={research} loading={candLoading} reasoning={reasoning} />
-          )}
-          {tab === 'charts' && (
-            <ChartsTab
-              thesis={thesis}
-              ticker={lead}
-              insiderDates={ctx?.insider_buys
-                ?.map(b => (b as InsiderBuy).transaction_date)
-                .filter((d): d is string => d != null)}
-            />
-          )}
-          {tab === 'thesis' && hasThesis && (
-            <ThesisTab thesis={thesis} market={market} factors={factors ?? computeFactors(thesis, market)} candidate={candidate} />
-          )}
+        <div className="relative min-h-0 flex-1">
+          <div className="absolute inset-0 overflow-hidden">
+            {tab === 'overview' && (
+              <OverviewTab thesis={thesis} bars={barsYear} market={market} ctx={ctx} reasoning={reasoning} />
+            )}
+            {tab === 'case' && (
+              <CaseTab ticker={lead} />
+            )}
+            {tab === 'cortex' && (
+              <CortexTab candidate={candidate} research={research} loading={candLoading} reasoning={reasoning} />
+            )}
+            {tab === 'charts' && (
+              <ChartsTab
+                thesis={thesis}
+                ticker={lead}
+                insiderDates={ctx?.insider_buys
+                  ?.map(b => (b as InsiderBuy).transaction_date)
+                  .filter((d): d is string => d != null)}
+              />
+            )}
+            {tab === 'thesis' && hasThesis && (
+              <ThesisTab thesis={thesis} market={market} factors={factors ?? computeFactors(thesis, market)} candidate={candidate} />
+            )}
+          </div>
         </div>
       </div>
     </div>
