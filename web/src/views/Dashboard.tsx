@@ -721,43 +721,66 @@ function CongressHeatmap() {
   const top = (data?.top_tickers ?? []).slice(0, 8)
   if (top.length === 0) return null
 
-  const maxNotional = Math.max(...top.map(t => t.buy_notional + t.sell_notional), 1)
+  const maxNotional = Math.max(...top.map(t => Math.max(t.buy_notional, t.sell_notional)), 1)
 
   return (
-    <div className="border-b border-border bg-bg-row/30 px-4 py-3">
-      <span className="label mb-2.5 block text-[9px] tracking-widest text-muted">TOP TICKERS — SENATE ACTIVITY (120d)</span>
-      <div className="space-y-1.5">
+    <div className="border-b border-border px-5 py-4" style={{ background: 'rgba(255,255,255,0.015)' }}>
+      <span className="label mb-3 block text-[9px] tracking-[0.12em] text-muted/60">SENATE FLOW BY TICKER · 120D</span>
+      <div className="space-y-2.5">
         {top.map(t => {
-          const total = t.buy_notional + t.sell_notional || 1
           const buyPct = (t.buy_notional / maxNotional) * 100
           const sellPct = (t.sell_notional / maxNotional) * 100
-          const netBuy = t.buy_notional > t.sell_notional
+          const netBuy = t.buy_notional >= t.sell_notional
           return (
-            <div key={t.ticker} className="flex items-center gap-2">
-              <span className={cn('num w-10 shrink-0 text-[10px] font-bold', netBuy ? 'text-up' : 'text-down')}>
+            <div key={t.ticker} className="grid items-center gap-3" style={{ gridTemplateColumns: '44px 1fr 52px' }}>
+              <span className={cn('num text-[10px] font-bold tracking-wide', netBuy ? 'text-up' : 'text-down')}>
                 {t.ticker}
               </span>
-              <div className="relative flex h-3 flex-1 overflow-hidden rounded-sm bg-border-dim/40">
-                {buyPct > 0 && (
+              <div className="space-y-[3px]">
+                {/* Buy bar */}
+                <div className="relative h-[5px] w-full overflow-hidden rounded-full" style={{ background: 'rgba(255,255,255,0.05)' }}>
                   <div
-                    className="h-full bg-up/50 transition-all"
-                    style={{ width: `${buyPct}%` }}
+                    className="absolute inset-y-0 left-0 rounded-full transition-all duration-500"
+                    style={{
+                      width: `${buyPct}%`,
+                      background: 'linear-gradient(90deg, rgba(52,211,153,0.7) 0%, rgba(52,211,153,0.25) 100%)',
+                    }}
                   />
-                )}
-                {sellPct > 0 && (
+                  {buyPct > 2 && (
+                    <div
+                      className="absolute inset-y-0 w-[2px] rounded-full"
+                      style={{
+                        left: `calc(${buyPct}% - 1px)`,
+                        background: 'rgba(52,211,153,0.9)',
+                        boxShadow: '0 0 4px rgba(52,211,153,0.7)',
+                      }}
+                    />
+                  )}
+                </div>
+                {/* Sell bar */}
+                <div className="relative h-[5px] w-full overflow-hidden rounded-full" style={{ background: 'rgba(255,255,255,0.05)' }}>
                   <div
-                    className="h-full bg-down/40 transition-all"
-                    style={{ width: `${sellPct}%` }}
+                    className="absolute inset-y-0 left-0 rounded-full transition-all duration-500"
+                    style={{
+                      width: `${sellPct}%`,
+                      background: 'linear-gradient(90deg, rgba(248,113,113,0.65) 0%, rgba(248,113,113,0.2) 100%)',
+                    }}
                   />
-                )}
+                  {sellPct > 2 && (
+                    <div
+                      className="absolute inset-y-0 w-[2px] rounded-full"
+                      style={{
+                        left: `calc(${sellPct}% - 1px)`,
+                        background: 'rgba(248,113,113,0.85)',
+                        boxShadow: '0 0 4px rgba(248,113,113,0.6)',
+                      }}
+                    />
+                  )}
+                </div>
               </div>
-              <div className="flex shrink-0 gap-1.5">
-                {t.buyers > 0 && (
-                  <span className="num text-[9px] text-up/80">{t.buyers}B</span>
-                )}
-                {t.sellers > 0 && (
-                  <span className="num text-[9px] text-down/70">{t.sellers}S</span>
-                )}
+              <div className="flex shrink-0 justify-end gap-2">
+                {t.buyers > 0 && <span className="num text-[9px] text-up/70">{t.buyers}B</span>}
+                {t.sellers > 0 && <span className="num text-[9px] text-down/60">{t.sellers}S</span>}
               </div>
             </div>
           )
@@ -871,29 +894,43 @@ function SmartMoneyConviction({ moves }: { moves: { manager: string; ticker: str
   const maxCount = Math.max(...sorted.map(r => r.count), 1)
 
   return (
-    <div className="border-b border-border bg-bg-row/30 px-4 py-3">
-      <span className="label mb-2.5 block text-[9px] tracking-widest text-muted">CONVICTION LEADERS — MANAGERS BUYING</span>
-      <div className="space-y-1.5">
-        {sorted.map(row => (
-          <div key={row.ticker} className="flex items-center gap-2">
-            <span className="num w-10 shrink-0 text-[10px] font-bold text-cyan">{row.ticker}</span>
-            <div className="relative flex h-3 flex-1 overflow-hidden rounded-sm bg-border-dim/40">
-              <div
-                className="h-full bg-cyan/40 transition-all"
-                style={{ width: `${(row.count / maxCount) * 100}%` }}
-              />
+    <div className="border-b border-border px-5 py-4" style={{ background: 'rgba(255,255,255,0.015)' }}>
+      <span className="label mb-3 block text-[9px] tracking-[0.12em] text-muted/60">INSTITUTIONAL CONVICTION · MANAGERS BUYING</span>
+      <div className="space-y-2.5">
+        {sorted.map(row => {
+          const pct = (row.count / maxCount) * 100
+          return (
+            <div key={row.ticker} className="grid items-center gap-3" style={{ gridTemplateColumns: '44px 1fr 110px' }}>
+              <span className="num text-[10px] font-bold tracking-wide text-cyan">{row.ticker}</span>
+              <div className="relative h-[5px] overflow-hidden rounded-full" style={{ background: 'rgba(255,255,255,0.05)' }}>
+                <div
+                  className="absolute inset-y-0 left-0 rounded-full transition-all duration-500"
+                  style={{
+                    width: `${pct}%`,
+                    background: 'linear-gradient(90deg, rgba(6,182,212,0.65) 0%, rgba(6,182,212,0.2) 100%)',
+                  }}
+                />
+                {pct > 2 && (
+                  <div
+                    className="absolute inset-y-0 w-[2px] rounded-full"
+                    style={{
+                      left: `calc(${pct}% - 1px)`,
+                      background: 'rgba(6,182,212,0.9)',
+                      boxShadow: '0 0 5px rgba(6,182,212,0.7)',
+                    }}
+                  />
+                )}
+              </div>
+              <div className="flex items-center justify-end gap-2">
+                <span className="num text-[9px] text-muted">{row.count} {row.count === 1 ? 'mgr' : 'mgrs'}</span>
+                <span className="num text-[9px] text-faint">{fmtBigUsd(row.value)}</span>
+                {row.hasNew && (
+                  <span className="num rounded-sm border border-up/30 bg-up/10 px-1 py-px text-[7px] font-bold tracking-widest text-up">NEW</span>
+                )}
+              </div>
             </div>
-            <div className="flex shrink-0 items-center gap-1.5">
-              <span className="num text-[9px] text-muted">
-                {row.count} {row.count === 1 ? 'mgr' : 'mgrs'}
-              </span>
-              <span className="num text-[9px] text-faint">{fmtBigUsd(row.value)}</span>
-              {row.hasNew && (
-                <span className="num text-[8px] font-bold tracking-widest text-up">NEW</span>
-              )}
-            </div>
-          </div>
-        ))}
+          )
+        })}
       </div>
     </div>
   )
