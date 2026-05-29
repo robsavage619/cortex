@@ -1088,3 +1088,95 @@ def run_event_study(
         horizons=horizons,
         placebo=placebo,
     )
+
+
+@dataclass
+class DailyCARPoint:
+    """Mean cumulative abnormal return at a given day offset from the filing date."""
+
+    day: int
+    mean_car: float
+    se: float  # standard error = std / sqrt(n)
+    n: int
+
+
+def run_event_study_daily(
+    db_path: Path,
+    *,
+    signal: str,
+    from_year: int = 2017,
+    max_day: int = 120,
+) -> list[DailyCARPoint]:
+    """Day-by-day mean CAR trajectory for a filing-gated signal (days 0..max_day).
+
+    Only events that have a complete max_day window (no NaN, not past data end)
+    are included, so every day in the trajectory averages over the same event set.
+    """
+    import pandas as pd
+    import yfinance as yf
+
+    from cortex.sources.universe import sp500_tickers
+
+    if signal == "insider":
+        all_events = _load_insider_events(db_path)
+    elif signal == "activism":
+        all_events = _load_activism_events(db_path)
+    elif signal == "congress":
+        all_events = _load_congress_events(db_path)
+    else:
+        raise ValueError(
+            f"Unknown signal {signal!r}; choose insider, activism, or congress"
+        )
+
+    events = [e for e in all_events if e.signed_weight > 0 and e.when.year >= from_year]
+    if not events:
+        return []
+
+    tickers = sp500_tickers()
+    raw: Any = yf.download(
+        tickers,
+        start=f"{from_year - 1}-01-01",
+        auto_adjust=True,
+        progress=False,
+        threads=True,
+    )
+    closes: Any = raw["Close"] if len(tickers) > 1 else raw[["Close"]]
+    closes = closes.dropna(how="all")
+    col_idx = {t: i for i, t in enumerate(closes.columns)}
+    price_arr = closes.to_numpy()
+    daily_idx: Any = closes.index
+
+    ret = np.full_like(price_arr, np.nan)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        ret[1:] = price_arr[1:] / price_arr[:-1] - 1.0
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", category=RuntimeWarning)
+        bench_ret = np.nanmean(ret, axis=1)
+    ar = ret - bench_ret[:, np.newaxis]
+
+    cum_cars: list[np.ndarray] = []
+    for ev in events:
+        col = col_idx.get(ev.ticker)
+        if col is None:
+            continue
+        e = int(daily_idx.searchsorted(pd.Timestamp(ev.when)))
+        if e + max_day >= len(daily_idx):
+            continue
+        window = ar[e : e + max_day + 1, col]
+        if len(window) < max_day + 1 or not np.all(np.isfinite(window)):
+            continue
+        cum_cars.append(np.cumsum(window))
+
+    if not cum_cars:
+        return []
+
+    matrix = np.vstack(cum_cars)  # [n_events, max_day+1]
+    n = matrix.shape[0]
+    means = matrix.mean(axis=0)
+    ses = matrix.std(axis=0) / math.sqrt(n) if n > 1 else np.zeros(max_day + 1)
+
+    log.info("CAR daily series: %d events contributed, signal=%s", n, signal)
+    return [
+        DailyCARPoint(day=d, mean_car=float(means[d]), se=float(ses[d]), n=n)
+        for d in range(max_day + 1)
+    ]
