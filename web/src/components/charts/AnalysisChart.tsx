@@ -2,9 +2,11 @@ import {
   AreaSeries,
   ColorType,
   createChart,
+  createSeriesMarkers,
   LineStyle,
   LineSeries,
   type IChartApi,
+  type SeriesMarker,
   type Time,
 } from 'lightweight-charts'
 import { useEffect, useRef } from 'react'
@@ -23,11 +25,13 @@ export function AnalysisChart({
   entryPrice,
   height = 240,
   showSMA = true,
+  markers,
 }: {
   bars: PriceBar[]
   entryPrice?: number | null
   height?: number
   showSMA?: boolean
+  markers?: Array<{ date: string }>
 }) {
   const ref = useRef<HTMLDivElement>(null)
 
@@ -65,6 +69,20 @@ export function AnalysisChart({
       priceLineVisible: false,
     })
     area.setData(bars.map(b => ({ time: b.date as Time, value: b.close })))
+
+    if (markers && markers.length > 0) {
+      const sorted: SeriesMarker<Time>[] = markers
+        .filter(m => m.date)
+        .sort((a, b) => a.date.localeCompare(b.date))
+        .map(m => ({
+          time: m.date as Time,
+          position: 'belowBar' as const,
+          color: '#34d399',
+          shape: 'arrowUp' as const,
+          size: 1,
+        }))
+      createSeriesMarkers(area, sorted)
+    }
 
     if (showSMA && bars.length >= 20) {
       const closes = bars.map(b => b.close)
@@ -129,7 +147,7 @@ export function AnalysisChart({
       ro.disconnect()
       chart.remove()
     }
-  }, [bars, entryPrice, height, showSMA])
+  }, [bars, entryPrice, height, markers, showSMA])
 
   return <div ref={ref} className="w-full" style={{ height }} />
 }

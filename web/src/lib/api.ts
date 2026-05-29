@@ -12,6 +12,7 @@ import type {
   CaseResponse,
   CongressResponse,
   CongressStatsResponse,
+  DailyCARPoint,
   Digest,
   DissentIn,
   FundsResponse,
@@ -50,6 +51,7 @@ const keys = {
   congressStats: (days: number) => ['congress-stats', days] as const,
   funds: (ticker: string | null) => ['funds', ticker] as const,
   refreshStatus: ['refresh-status'] as const,
+  carSeries: (signal: string) => ['car-series', signal] as const,
 }
 
 export function useTheses(params?: { author?: string; status?: string }) {
@@ -253,6 +255,19 @@ export function useTickerResearch(ticker: string | null) {
     queryFn: async () => {
       const { data } = await http.get<TickerResearch>(`/research/ticker/${ticker}`)
       return data
+    },
+  })
+}
+
+export function useCarSeries(signal: string) {
+  return useQuery({
+    queryKey: keys.carSeries(signal),
+    staleTime: 24 * 60 * 60 * 1000,
+    queryFn: async () => {
+      const { data } = await http.get<{ series: DailyCARPoint[] }>(
+        `/event-study/${signal}/car-series`,
+      )
+      return data.series
     },
   })
 }

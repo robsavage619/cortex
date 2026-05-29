@@ -3,9 +3,11 @@ import { Link } from 'react-router-dom'
 import { ArrowUpRight, Sparkles, TrendingDown, TrendingUp, X } from 'lucide-react'
 
 import { AnalysisChart } from '@/components/charts/AnalysisChart'
+import { CARChart } from '@/components/charts/CARChart'
 import { TickerLogo } from '@/components/ui/TickerLogo'
 import {
   useCandidate,
+  useCarSeries,
   useCase,
   useCongress,
   useFunds,
@@ -421,6 +423,7 @@ function OverviewTab({
   ctx: ReturnType<typeof useTickerContext>['data']
   reasoning: StockReasoning | null
 }) {
+  const { data: insiderCarSeries } = useCarSeries('insider')
   const price = market?.price ?? null
   const ret1m  = computeReturn(bars, 21)
   const ret3m  = computeReturn(bars, 63)
@@ -596,6 +599,17 @@ function OverviewTab({
             </div>
           </div>
         )}
+
+        {/* CAR trajectory — universe-wide insider buy signal */}
+        {insiderCarSeries && insiderCarSeries.length > 0 && (
+          <div className="space-y-2 rounded-sm border border-border-bright bg-surface-raised p-4">
+            <span className="label block">FILING EVENT EVIDENCE</span>
+            <p className="font-sans text-[11px] text-muted">
+              Mean CAR across all S&P 500 insider open-market purchases (2017→now) — universe-wide, not this stock. Shows how this signal has historically played out over 120 trading days.
+            </p>
+            <CARChart series={insiderCarSeries} />
+          </div>
+        )}
       </div>
 
       {/* Right column */}
@@ -691,9 +705,11 @@ function OverviewTab({
 function ChartsTab({
   thesis,
   ticker,
+  insiderDates,
 }: {
   thesis?: Thesis
   ticker: string
+  insiderDates?: string[]
 }) {
   const [period, setPeriod] = useState<Period>('6mo')
   const { data: bars = [] } = useHistory(ticker, period)
@@ -738,7 +754,7 @@ function ChartsTab({
         </div>
 
         <div className="border border-border bg-bg">
-          <AnalysisChart bars={bars} entryPrice={thesis?.entry_price} height={220} showSMA />
+          <AnalysisChart bars={bars} entryPrice={thesis?.entry_price} height={220} showSMA markers={insiderDates?.map(d => ({ date: d }))} />
         </div>
 
         <div className="grid grid-cols-3 gap-3">
@@ -1617,7 +1633,13 @@ export function StockModal({
             <CortexTab candidate={candidate} research={research} loading={candLoading} reasoning={reasoning} />
           )}
           {tab === 'charts' && (
-            <ChartsTab thesis={thesis} ticker={lead} />
+            <ChartsTab
+              thesis={thesis}
+              ticker={lead}
+              insiderDates={ctx?.insider_buys
+                ?.map(b => (b as InsiderBuy).transaction_date)
+                .filter((d): d is string => d != null)}
+            />
           )}
           {tab === 'thesis' && hasThesis && (
             <ThesisTab thesis={thesis} market={market} factors={factors ?? computeFactors(thesis, market)} candidate={candidate} />

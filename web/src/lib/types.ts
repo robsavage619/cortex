@@ -146,6 +146,13 @@ export interface MarketContext {
   website: string | null
 }
 
+export interface DailyCARPoint {
+  day: number
+  mean_car: number
+  se: number
+  n: number
+}
+
 export interface InsiderBuy {
   filer_name: string
   filer_role: string
