@@ -8,6 +8,7 @@ import {
   useCalibration,
   useCandidates,
   useCongress,
+  useCongressStats,
   useFunds,
   useHistory,
   useRefresh,
@@ -715,6 +716,57 @@ function txnTone(type: string): string {
   return 'text-muted'
 }
 
+function CongressHeatmap() {
+  const { data } = useCongressStats(120)
+  const top = (data?.top_tickers ?? []).slice(0, 8)
+  if (top.length === 0) return null
+
+  const maxNotional = Math.max(...top.map(t => t.buy_notional + t.sell_notional), 1)
+
+  return (
+    <div className="border-b border-border bg-bg-row/30 px-4 py-3">
+      <span className="label mb-2.5 block text-[9px] tracking-widest text-muted">TOP TICKERS — SENATE ACTIVITY (120d)</span>
+      <div className="space-y-1.5">
+        {top.map(t => {
+          const total = t.buy_notional + t.sell_notional || 1
+          const buyPct = (t.buy_notional / maxNotional) * 100
+          const sellPct = (t.sell_notional / maxNotional) * 100
+          const netBuy = t.buy_notional > t.sell_notional
+          return (
+            <div key={t.ticker} className="flex items-center gap-2">
+              <span className={cn('num w-10 shrink-0 text-[10px] font-bold', netBuy ? 'text-up' : 'text-down')}>
+                {t.ticker}
+              </span>
+              <div className="relative flex h-3 flex-1 overflow-hidden rounded-sm bg-border-dim/40">
+                {buyPct > 0 && (
+                  <div
+                    className="h-full bg-up/50 transition-all"
+                    style={{ width: `${buyPct}%` }}
+                  />
+                )}
+                {sellPct > 0 && (
+                  <div
+                    className="h-full bg-down/40 transition-all"
+                    style={{ width: `${sellPct}%` }}
+                  />
+                )}
+              </div>
+              <div className="flex shrink-0 gap-1.5">
+                {t.buyers > 0 && (
+                  <span className="num text-[9px] text-up/80">{t.buyers}B</span>
+                )}
+                {t.sellers > 0 && (
+                  <span className="num text-[9px] text-down/70">{t.sellers}S</span>
+                )}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 function CongressSection() {
   const { data, isLoading } = useCongress(null, 120)
   const trades = data?.trades ?? []
@@ -728,6 +780,7 @@ function CongressSection() {
         count={trades.length}
         tone="watch"
       />
+      {trades.length > 0 && <CongressHeatmap />}
       {isLoading ? (
         <div className="px-5 py-5">
           <span className="num text-[11px] text-faint">Loading congressional filings…</span>
@@ -799,6 +852,53 @@ function fmtBigUsd(v: number): string {
   return `$${v}`
 }
 
+function SmartMoneyConviction({ moves }: { moves: { manager: string; ticker: string; action: string; value: number }[] }) {
+  type Agg = { managers: Set<string>; value: number; hasNew: boolean }
+  const byTicker = new Map<string, Agg>()
+  for (const m of moves) {
+    const agg = byTicker.get(m.ticker) ?? { managers: new Set(), value: 0, hasNew: false }
+    agg.managers.add(m.manager)
+    agg.value += m.value
+    if (m.action === 'NEW') agg.hasNew = true
+    byTicker.set(m.ticker, agg)
+  }
+  const sorted = [...byTicker.entries()]
+    .map(([ticker, agg]) => ({ ticker, count: agg.managers.size, value: agg.value, hasNew: agg.hasNew }))
+    .sort((a, b) => b.count - a.count || b.value - a.value)
+    .slice(0, 8)
+
+  if (sorted.length === 0) return null
+  const maxCount = Math.max(...sorted.map(r => r.count), 1)
+
+  return (
+    <div className="border-b border-border bg-bg-row/30 px-4 py-3">
+      <span className="label mb-2.5 block text-[9px] tracking-widest text-muted">CONVICTION LEADERS — MANAGERS BUYING</span>
+      <div className="space-y-1.5">
+        {sorted.map(row => (
+          <div key={row.ticker} className="flex items-center gap-2">
+            <span className="num w-10 shrink-0 text-[10px] font-bold text-cyan">{row.ticker}</span>
+            <div className="relative flex h-3 flex-1 overflow-hidden rounded-sm bg-border-dim/40">
+              <div
+                className="h-full bg-cyan/40 transition-all"
+                style={{ width: `${(row.count / maxCount) * 100}%` }}
+              />
+            </div>
+            <div className="flex shrink-0 items-center gap-1.5">
+              <span className="num text-[9px] text-muted">
+                {row.count} {row.count === 1 ? 'mgr' : 'mgrs'}
+              </span>
+              <span className="num text-[9px] text-faint">{fmtBigUsd(row.value)}</span>
+              {row.hasNew && (
+                <span className="num text-[8px] font-bold tracking-widest text-up">NEW</span>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 function SmartMoneySection() {
   const { data, isLoading } = useFunds(null)
   const moves = data?.moves ?? []
@@ -812,6 +912,7 @@ function SmartMoneySection() {
         count={moves.length}
         tone="strong-buy"
       />
+      {moves.length > 0 && <SmartMoneyConviction moves={moves} />}
       {isLoading ? (
         <div className="px-5 py-5">
           <span className="num text-[11px] text-faint">Loading 13F filings…</span>
