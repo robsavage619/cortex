@@ -926,3 +926,165 @@ def run_congress_oos(
         oos_benchmark_sharpe=bench_sharpe,
         verdict=verdict,
     )
+
+
+# ── event-study (CAR) harness ────────────────────────────────────────────────
+
+_HORIZONS: list[tuple[int, int]] = [(0, 5), (0, 20), (0, 60), (0, 120)]
+_PLACEBO_WINDOW: tuple[int, int] = (-5, -1)
+
+
+def _car_window(
+    ar: np.ndarray, event_idx: int, col: int, w_start: int, w_end: int
+) -> float | None:
+    """Sum of daily abnormal returns in [event_idx+w_start, event_idx+w_end] inclusive.
+
+    Returns None if the window falls outside array bounds or contains any NaN/Inf.
+    """
+    start = event_idx + w_start
+    end = event_idx + w_end + 1  # exclusive upper bound
+    if start < 0 or end > ar.shape[0]:
+        return None
+    window = ar[start:end, col]
+    if not np.all(np.isfinite(window)):
+        return None
+    return float(window.sum())
+
+
+@dataclass
+class HorizonResult:
+    w_start: int
+    w_end: int
+    mean_car: float
+    nw_tstat: float
+    hit_rate: float  # fraction of events with positive CAR
+    n: int
+
+
+@dataclass
+class EventStudyReport:
+    """Results of the filing-gated event study.
+
+    Method: market-adjusted model — daily return minus equal-weight S&P 500
+    benchmark. No per-name beta estimation; CAPM-residual is a future upgrade.
+    Each event is treated independently: multiple purchases by the same ticker
+    in overlapping windows each contribute a separate observation (see Cohen
+    et al. 2012 for a clustered alternative).
+    """
+
+    signal: str
+    from_year: int
+    n_events_total: int
+    n_skipped: int  # ticker missing from price data, or event past data end
+    horizons: list[HorizonResult]
+    placebo: HorizonResult  # (-5, -1) pre-event leakage check
+
+
+def run_event_study(
+    db_path: Path,
+    *,
+    signal: str,
+    from_year: int = 2017,
+) -> EventStudyReport:
+    """Compute cumulative abnormal return (CAR) around filing-gated events.
+
+    Downloads daily adjusted closes via yfinance (no SEC credentials required).
+    """
+    import pandas as pd
+    import yfinance as yf
+
+    from cortex.sources.universe import sp500_tickers
+
+    if signal == "insider":
+        all_events = _load_insider_events(db_path)
+    elif signal == "activism":
+        all_events = _load_activism_events(db_path)
+    elif signal == "congress":
+        all_events = _load_congress_events(db_path)
+    else:
+        raise ValueError(
+            f"Unknown signal {signal!r}; choose insider, activism, or congress"
+        )
+
+    events = [e for e in all_events if e.signed_weight > 0 and e.when.year >= from_year]
+    log.info(
+        "Event study: %d %s events (signed_weight > 0, year >= %d)",
+        len(events),
+        signal,
+        from_year,
+    )
+
+    tickers = sp500_tickers()
+    raw: Any = yf.download(
+        tickers,
+        start=f"{from_year - 1}-01-01",
+        auto_adjust=True,
+        progress=False,
+        threads=True,
+    )
+    closes: Any = raw["Close"] if len(tickers) > 1 else raw[["Close"]]
+    closes = closes.dropna(how="all")
+    cols = list(closes.columns)
+    col_idx = {t: i for i, t in enumerate(cols)}
+    price_arr = closes.to_numpy()  # [days, names]
+    daily_idx: Any = closes.index
+
+    # Daily simple returns; row 0 is NaN (no prior day).
+    ret = np.full_like(price_arr, np.nan)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        ret[1:] = price_arr[1:] / price_arr[:-1] - 1.0
+
+    # Equal-weight benchmark: daily mean across all names.
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", category=RuntimeWarning)
+        bench_ret = np.nanmean(ret, axis=1)  # [days]
+
+    ar = ret - bench_ret[:, np.newaxis]  # [days, names]
+
+    cars_by_horizon: dict[tuple[int, int], list[float]] = {h: [] for h in _HORIZONS}
+    cars_placebo: list[float] = []
+    n_skipped = 0
+
+    for ev in events:
+        col = col_idx.get(ev.ticker)
+        if col is None:
+            n_skipped += 1
+            continue
+        e = int(daily_idx.searchsorted(pd.Timestamp(ev.when)))
+        if e >= len(daily_idx):
+            n_skipped += 1
+            continue
+
+        pl = _car_window(ar, e, col, *_PLACEBO_WINDOW)
+        if pl is not None:
+            cars_placebo.append(pl)
+
+        for h in _HORIZONS:
+            car = _car_window(ar, e, col, *h)
+            if car is not None:
+                cars_by_horizon[h].append(car)
+
+    def _to_horizon(h: tuple[int, int], cars: list[float]) -> HorizonResult:
+        if not cars:
+            return HorizonResult(h[0], h[1], 0.0, 0.0, 0.0, 0)
+        arr = np.array(cars)
+        return HorizonResult(
+            w_start=h[0],
+            w_end=h[1],
+            mean_car=float(arr.mean()),
+            nw_tstat=_nw_tstat(cars),
+            hit_rate=float((arr > 0).mean()),
+            n=len(cars),
+        )
+
+    placebo = _to_horizon(_PLACEBO_WINDOW, cars_placebo)
+    horizons = [_to_horizon(h, cars_by_horizon[h]) for h in _HORIZONS]
+
+    return EventStudyReport(
+        signal=signal,
+        from_year=from_year,
+        n_events_total=len(events),
+        n_skipped=n_skipped,
+        horizons=horizons,
+        placebo=placebo,
+    )

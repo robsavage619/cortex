@@ -220,6 +220,60 @@ def _cmd_fundamentals_sync(args: argparse.Namespace) -> None:  # noqa: ARG001
     print(f"Fundamentals sync complete — {new} new annual data points")
 
 
+def _cmd_event_study(args: argparse.Namespace) -> None:
+    from cortex.backtest import run_event_study
+    from cortex.config import load_settings
+
+    settings = load_settings()
+    rep = run_event_study(
+        settings.duckdb_path,
+        signal=args.signal,
+        from_year=args.from_year,
+    )
+    signal_label = {
+        "insider": "INSIDER  (Form 4 open-market buys)",
+        "activism": "ACTIVISM  (SC 13D initial stakes)",
+        "congress": "CONGRESS  (Senate/House disclosures)",
+    }.get(args.signal, args.signal.upper())
+    print()
+    print("=" * 80)
+    print(f"EVENT-STUDY: {signal_label}  from_year={rep.from_year}")
+    print("Market-adjusted CAR (EW S&P 500 benchmark; no beta estimation).")
+    print("Each filing treated as an independent event.")
+    print("=" * 80)
+    print()
+    pl = rep.placebo
+    print(
+        f"  PRE-EVENT PLACEBO ({pl.w_start:+d},{pl.w_end:+d}): "
+        f"CAR={pl.mean_car:+.2%}  NW t={pl.nw_tstat:+.2f}  "
+        f"hit={pl.hit_rate:.0%}  n={pl.n}"
+    )
+    print("  (should be ~0 if filing-date gating is correct)")
+    print()
+    print("  HORIZONS:")
+    for h in rep.horizons:
+        print(
+            f"  ({h.w_start:+d},+{h.w_end:d}): "
+            f"CAR={h.mean_car:+.2%}  NW t={h.nw_tstat:+.2f}  "
+            f"hit={h.hit_rate:.0%}  n={h.n}"
+        )
+    print()
+    print(
+        f"  {rep.n_skipped} events skipped (ticker absent from price data "
+        "or event past data end)"
+    )
+    print()
+    print("  CAVEATS:")
+    print("  - Universe survivorship bias: current S&P 500 members only")
+    print("  - Market-adjusted model only (no beta); CAPM-residual is a future upgrade")
+    print(
+        f"  - Sparse: {rep.n_events_total} events across ~503 names "
+        f"({rep.from_year}→now)"
+    )
+    print("  - t ≥ 3.0 (NW, autocorrelation-robust) required to claim a real edge")
+    print("=" * 80)
+
+
 def _cmd_congress_oos(args: argparse.Namespace) -> None:
     from cortex.backtest import run_congress_oos
     from cortex.config import load_settings
@@ -486,6 +540,25 @@ def main() -> None:
     )
     sub.add_parser("fundamentals-sync", help="Sync point-in-time EDGAR fundamentals")
 
+    es_p = sub.add_parser(
+        "event-study",
+        help="CAR event study for a filing-gated signal (insider/activism/congress)",
+    )
+    es_p.add_argument(
+        "--signal",
+        required=True,
+        choices=["insider", "activism", "congress"],
+        metavar="{insider,activism,congress}",
+        help="Signal to evaluate",
+    )
+    es_p.add_argument(
+        "--from-year",
+        type=int,
+        default=2017,
+        metavar="YYYY",
+        help="First year of events to include (default: 2017)",
+    )
+
     oos_p = sub.add_parser(
         "congress-oos",
         help="Pre-registered OOS test of the congressional-buy factor",
@@ -535,6 +608,7 @@ def main() -> None:
         "insiders-sync": _cmd_insiders_sync,
         "activism-sync": _cmd_activism_sync,
         "fundamentals-sync": _cmd_fundamentals_sync,
+        "event-study": _cmd_event_study,
         "congress-oos": _cmd_congress_oos,
         "backtest": _cmd_backtest,
         "serve": _cmd_serve,
