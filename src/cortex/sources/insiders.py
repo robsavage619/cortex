@@ -17,11 +17,13 @@ of transaction). Universe filter: S&P 500 tickers only.
 
 from __future__ import annotations
 
+import csv
 import hashlib
 import io
 import logging
 import time
 import xml.etree.ElementTree as ET
+import zipfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import date
@@ -381,6 +383,33 @@ _SUBMISSIONS_BASE = "https://data.sec.gov/submissions"
 _HEADERS = {"User-Agent": _IDENTITY}
 _MAX_WORKERS = 3  # EDGAR allows ~10 req/s; 3 workers × ~3 req/s ≈ safe
 _RETRY_SLEEP = 12.0  # back-off seconds on 429
+
+# SEC DERA "Insider Transactions Data Sets" — quarterly Form 3/4/5 bundles with
+# transaction codes pre-parsed into TSVs. One ~14 MB download per quarter
+# replaces hundreds of thousands of per-filing XML fetches.
+_DATASET_BASE = (
+    "https://www.sec.gov/files/structureddata/data/insider-transactions-data-sets"
+)
+_MONTHS = {
+    m: i
+    for i, m in enumerate(
+        [
+            "JAN",
+            "FEB",
+            "MAR",
+            "APR",
+            "MAY",
+            "JUN",
+            "JUL",
+            "AUG",
+            "SEP",
+            "OCT",
+            "NOV",
+            "DEC",
+        ],
+        start=1,
+    )
+}
 
 
 def _quarters_since(from_year: int) -> list[tuple[int, int]]:
@@ -815,6 +844,176 @@ def fetch_insider_buys_bulk_index(
         f"Bulk sync complete: {total_new:,} new rows from {processed:,} filings",
         flush=True,
     )
+    return total_new
+
+
+# ── quarterly dataset ingestion (preferred — bulk over per-filing) ─────────────
+
+
+def _parse_dataset_date(s: str) -> date | None:
+    """Parse a SEC dataset 'DD-MON-YYYY' date (e.g. '28-FEB-2024')."""
+    parts = (s or "").strip().split("-")
+    if len(parts) != 3:
+        return None
+    month = _MONTHS.get(parts[1].upper())
+    if month is None:
+        return None
+    try:
+        return date(int(parts[2]), month, int(parts[0]))
+    except ValueError:
+        return None
+
+
+def _role_from_relationship(relationship: str) -> str:
+    """Map a REPORTINGOWNER relationship string to officer/director/owner/other.
+
+    Priority matches the XML path: officer > director > 10%-owner > other.
+    """
+    rel = (relationship or "").lower()
+    if "officer" in rel:
+        return "officer"
+    if "director" in rel:
+        return "director"
+    if "tenpercent" in rel:
+        return "owner"
+    return "other"
+
+
+def _open_tsv(zf: zipfile.ZipFile, name: str) -> csv.DictReader:
+    fh = io.TextIOWrapper(zf.open(name), encoding="utf-8", errors="replace")
+    return csv.DictReader(fh, delimiter="\t")
+
+
+def _parse_quarter_zip(content: bytes, universe: set[str]) -> list[InsiderBuyEvent]:
+    """Extract P-coded open-market buys for the universe from one quarterly bundle.
+
+    Filtering SUBMISSION to the universe first drops ~95% of rows before the
+    join, so the two follow-on passes touch only relevant accessions.
+    """
+    events: list[InsiderBuyEvent] = []
+    with zipfile.ZipFile(io.BytesIO(content)) as zf:
+        submissions: dict[str, tuple[str, str, date]] = {}
+        for row in _open_tsv(zf, "SUBMISSION.tsv"):
+            if row.get("DOCUMENT_TYPE") != "4":
+                continue
+            ticker = (row.get("ISSUERTRADINGSYMBOL") or "").strip().upper()
+            if ticker not in universe:
+                continue
+            filing_date = _parse_dataset_date(row.get("FILING_DATE", ""))
+            if filing_date is None:
+                continue
+            acc = row.get("ACCESSION_NUMBER") or ""
+            submissions[acc] = (
+                (row.get("ISSUERCIK") or "").zfill(10),
+                ticker,
+                filing_date,
+            )
+        if not submissions:
+            return []
+
+        owners: dict[str, tuple[str, str, str]] = {}
+        for row in _open_tsv(zf, "REPORTINGOWNER.tsv"):
+            acc = row.get("ACCESSION_NUMBER") or ""
+            if acc not in submissions or acc in owners:
+                continue  # keep first reporting owner per filing
+            owners[acc] = (
+                (row.get("RPTOWNERCIK") or "").lstrip("0"),
+                row.get("RPTOWNERNAME") or "",
+                _role_from_relationship(row.get("RPTOWNER_RELATIONSHIP", "")),
+            )
+
+        for row in _open_tsv(zf, "NONDERIV_TRANS.tsv"):
+            acc = row.get("ACCESSION_NUMBER") or ""
+            if acc not in submissions or row.get("TRANS_CODE") != "P":
+                continue
+            acq = (row.get("TRANS_ACQUIRED_DISP_CD") or "").strip().upper()
+            if acq and acq != "A":
+                continue  # disposals coded P are rare — skip
+            tx_date = _parse_dataset_date(row.get("TRANS_DATE", ""))
+            if tx_date is None:
+                continue
+            try:
+                shares = float(row.get("TRANS_SHARES") or 0)
+                price = float(row.get("TRANS_PRICEPERSHARE") or 0)
+            except ValueError:
+                continue
+            if shares <= 0 or price <= 0:
+                continue
+            issuer_cik, ticker, filing_date = submissions[acc]
+            filer_cik, filer_name, role = owners.get(acc, ("", "", "other"))
+            events.append(
+                InsiderBuyEvent(
+                    ticker=ticker,
+                    issuer_cik=issuer_cik,
+                    filer_cik=filer_cik,
+                    filer_name=filer_name,
+                    filer_role=role,
+                    transaction_date=tx_date,
+                    filing_date=filing_date,
+                    shares=shares,
+                    value_usd=shares * price,
+                )
+            )
+    return events
+
+
+def _download_quarter_zip(year: int, quarter: int) -> bytes | None:
+    """Download one quarterly Form 345 dataset, retrying on 429."""
+    url = f"{_DATASET_BASE}/{year}q{quarter}_form345.zip"
+    for attempt in range(4):
+        try:
+            resp = requests.get(url, headers=_HEADERS, timeout=120)
+        except requests.RequestException as exc:
+            log.warning("insiders: %s fetch error: %s", url, exc)
+            return None
+        if resp.status_code == 429:
+            time.sleep(_RETRY_SLEEP * (attempt + 1))
+            continue
+        if resp.status_code == 404:
+            log.info("insiders: dataset not yet published for %dQ%d", year, quarter)
+            return None
+        resp.raise_for_status()
+        return resp.content
+    log.warning("insiders: %dQ%d rate-limited after retries", year, quarter)
+    return None
+
+
+def fetch_insider_buys_datasets(
+    universe_tickers: set[str],
+    db_path: Path,
+    *,
+    from_year: int = 2017,
+) -> int:
+    """Sync Form 4 open-market buys via SEC's quarterly Insider Transactions
+    Data Sets (DERA Form 345 TSV bundles).
+
+    One ~14 MB download per quarter (≈37 requests for 2017→now) replaces the
+    ~280k per-filing XML fetches the legacy index walk required: the transaction
+    code is already a column, so we filter to ``TRANS_CODE='P'`` open-market
+    buys for the universe locally. Idempotent via ``store_insider_buys``.
+    """
+    universe = {t.upper() for t in universe_tickers}
+    quarters = _quarters_since(from_year)
+    print(
+        f"Insider sync via SEC datasets: {len(quarters)} quarters,"
+        f" {len(universe)} universe tickers…",
+        flush=True,
+    )
+    total_new = 0
+    for year, quarter in quarters:
+        content = _download_quarter_zip(year, quarter)
+        if content is None:
+            continue
+        events = _parse_quarter_zip(content, universe)
+        new = store_insider_buys(events, db_path)
+        total_new += new
+        print(
+            f"  {year}Q{quarter}: {len(events):,} P-buys for universe,"
+            f" {new:,} new (running total {total_new:,})",
+            flush=True,
+        )
+        time.sleep(0.3)  # gentle pacing between quarterly downloads
+    print(f"Insider dataset sync complete — {total_new:,} new rows", flush=True)
     return total_new
 
 

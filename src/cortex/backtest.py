@@ -444,22 +444,26 @@ def _build_signals(
     """Build composite variants from three equal blocks.
 
     Blocks: price (mom/trend), fundamental (value/quality), flow
-    (congress/13F/insider). Each block = nanmean of available factors;
+    (congress/13F). Each block = nanmean of available factors;
     composite = nanmean of available block means (no z-imputation).
 
     Low-vol excluded from price block: the low-volatility anomaly
     underperforms in sustained bull-market regimes (Ang et al. 2006,
     Baker et al. 2011). Pre-registered removal 2026-05-23.
 
-    Insider signal included in flow block alongside congress and 13F.
-    Evaluated post-sync — if t-stat < 1.0 after first sync, will be
-    excluded from composite on the same pre-registration basis as activism.
+    Insider (Form 4 P-code) excluded from the flow block: pre-registered as
+    "drop if t-stat < 1.0 after first sync." First full sync (2026-05-28,
+    8.6k buys, 23% coverage) measured monthly IC NW t = -0.43 — insider buys
+    are contrarian (corr -0.33 with momentum) and carry no monthly-horizon
+    signal in large-cap names. Still computed and shown in the ablation; not
+    in the composite. ``zinside`` is intentionally unused here.
     """
+    _ = zinside  # retained for the ablation; pre-registered out of the composite
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", category=RuntimeWarning)
         price = np.nanmean(np.vstack([zmom, ztrend]), axis=0)
         fund = np.nanmean(np.vstack([zval, zqual]), axis=0)
-        flow = np.nanmean(np.vstack([zcong, zfund, zinside]), axis=0)
+        flow = np.nanmean(np.vstack([zcong, zfund]), axis=0)
         cortex = np.nanmean(np.vstack([price, fund, flow]), axis=0)
         price_fund = np.nanmean(np.vstack([price, fund]), axis=0)
     return {

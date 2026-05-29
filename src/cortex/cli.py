@@ -165,17 +165,17 @@ def _cmd_funds_sync(args: argparse.Namespace) -> None:  # noqa: ARG001
 
 def _cmd_insiders_sync(args: argparse.Namespace) -> None:
     from cortex.config import load_settings
-    from cortex.sources.insiders import fetch_insider_buys_bulk_index
+    from cortex.sources.insiders import fetch_insider_buys_datasets
     from cortex.sources.universe import sp500_tickers
 
     settings = load_settings()
     universe = set(sp500_tickers())
     print(
         f"Fetching Form 4 purchases for {len(universe)} tickers "
-        f"from {args.from_year} via EDGAR bulk index…",
+        f"from {args.from_year} via SEC quarterly datasets…",
         flush=True,
     )
-    total_new = fetch_insider_buys_bulk_index(
+    total_new = fetch_insider_buys_datasets(
         universe, settings.duckdb_path, from_year=args.from_year
     )
     print(f"Insiders sync complete — {total_new} new rows", flush=True)
