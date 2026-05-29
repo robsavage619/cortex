@@ -43,6 +43,10 @@ _FUND_HALFLIFE = 270.0
 # halflife with 180-day window chosen a priori.
 _INSIDER_HALFLIFE = 90.0
 _INSIDER_WINDOW = 180
+# Activism (SC 13D) drifts slowly: Brav & Jiang (2008) document 10-30% drift
+# over 12-18 months in large caps. 365-day halflife / 730-day window a priori.
+_ACTIVISM_HALFLIFE = 365.0
+_ACTIVISM_WINDOW = 730
 _CONGRESS_WINDOW = 365  # trailing days of filings to consider
 _FUND_WINDOW = 540
 _Z_CLIP = 3.0
@@ -584,9 +588,12 @@ def run_backtest(
         insider_map = _flow_score(
             insider_events, as_of, _INSIDER_HALFLIFE, _INSIDER_WINDOW
         )
+        activ_map = _flow_score(
+            activism_events, as_of, _ACTIVISM_HALFLIFE, _ACTIVISM_WINDOW
+        )
         cong = np.full(n_names, np.nan)
         fundflow = np.full(n_names, np.nan)
-        activ = np.full(n_names, np.nan)  # excluded from composite (wrong timescale)
+        activ = np.full(n_names, np.nan)  # scored for ablation; not in composite
         insider = np.full(n_names, np.nan)
         for t, v in cong_map.items():
             if t in col_idx:
@@ -597,6 +604,9 @@ def run_backtest(
         for t, v in insider_map.items():
             if t in col_idx:
                 insider[col_idx[t]] = v
+        for t, v in activ_map.items():
+            if t in col_idx:
+                activ[col_idx[t]] = v
 
         eligible = (
             np.isfinite(p_now) & ~np.isnan(mom) & ~np.isnan(trend) & ~np.isnan(vol)
