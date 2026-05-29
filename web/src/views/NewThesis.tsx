@@ -262,7 +262,7 @@ export function NewThesis() {
           <div>
             <Label htmlFor="base_rate">BASE RATE</Label>
             <Textarea id="base_rate"
-              placeholder="What's the outside-view reference class? How often do similar situations resolve this way?"
+              placeholder="e.g. 'Turnaround plays in this sector succeed ~30% of the time historically.' Anchor your forecast to past base rates, not optimism."
               value={baseRate} onChange={e => setBaseRate(e.target.value)} className="min-h-16" />
           </div>
 

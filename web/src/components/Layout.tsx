@@ -19,7 +19,7 @@ export function Layout() {
   const dueCount = due?.length ?? 0
 
   return (
-    <div className="flex min-h-screen flex-col bg-bg font-mono text-ink">
+    <div className="flex h-screen flex-col bg-bg font-mono text-ink">
 
       {/* ── Top bar ──────────────────────────────────────────── */}
       <header className="flex h-11 shrink-0 items-center border-b border-border bg-bg-panel">

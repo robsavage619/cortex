@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 
 import { Button } from '@/components/ui/Button'
 import { Select } from '@/components/ui/Field'
-import { useRecordReview, useReviewQueue } from '@/lib/api'
+import { useRecordReview, useReviewQueue, useTheses } from '@/lib/api'
 import type { DecisionQuality, ReviewOutcome, Thesis } from '@/lib/types'
 import { cn, daysUntil, fmtDate, fmtPrice } from '@/lib/utils'
 
@@ -128,9 +128,42 @@ function ReviewRow({ t }: { t: Thesis }) {
 
 // ── Review Queue ──────────────────────────────────────────────────────────────
 
+function UpcomingSchedule({ active }: { active: Thesis[] }) {
+  const upcoming = [...active]
+    .filter(t => daysUntil(t.review_date) > 0)
+    .sort((a, b) => daysUntil(a.review_date) - daysUntil(b.review_date))
+    .slice(0, 8)
+
+  if (upcoming.length === 0) return null
+  return (
+    <div className="mt-6 w-full max-w-lg">
+      <span className="label block mb-3">UPCOMING REVIEWS</span>
+      <div className="space-y-1.5">
+        {upcoming.map(t => {
+          const days = daysUntil(t.review_date)
+          return (
+            <div key={t.id} className="flex items-center justify-between border-b border-border-dim pb-1.5">
+              <div className="flex items-center gap-3">
+                <span className="num text-[12px] font-bold text-ink">{t.tickers.join(' ')}</span>
+                <span className="font-sans text-[11px] text-muted truncate max-w-[240px]">{t.claim}</span>
+              </div>
+              <div className="flex items-center gap-2 shrink-0 ml-4">
+                <span className="num text-[10px] text-faint">{fmtDate(t.review_date)}</span>
+                <span className="num text-[10px] text-warn/80">{days}d</span>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 export function ReviewQueue() {
   const queue = useReviewQueue()
+  const allTheses = useTheses({ status: 'open' })
   const due   = queue.data ?? []
+  const active = allTheses.data ?? []
 
   if (queue.isLoading) {
     return <div className="flex flex-1 items-center justify-center">
@@ -155,12 +188,13 @@ export function ReviewQueue() {
       </div>
 
       {due.length === 0 ? (
-        <div className="flex flex-1 flex-col items-center justify-center gap-3">
+        <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 py-8">
           <span className="num text-sm text-up">✓ ALL CLEAR</span>
           <p className="font-sans text-[12px] text-faint max-w-sm text-center">
             No open theses have reached their review date. Low review frequency is by design — it reduces action bias.
           </p>
-          <Link to="/" className="num mt-2 text-[11px] text-muted hover:text-cyan">
+          <UpcomingSchedule active={active} />
+          <Link to="/" className="num mt-4 text-[11px] text-muted hover:text-cyan">
             ← BACK TO DASHBOARD
           </Link>
         </div>

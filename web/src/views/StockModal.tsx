@@ -605,7 +605,7 @@ function OverviewTab({
           <div className="space-y-2 rounded-sm border border-border-bright bg-surface-raised p-4">
             <span className="label block">FILING EVENT EVIDENCE</span>
             <p className="font-sans text-[11px] text-muted">
-              Mean CAR across all S&P 500 insider open-market purchases (2017→now) — universe-wide, not this stock. Shows how this signal has historically played out over 120 trading days.
+              CAR = Cumulative Abnormal Return (stock return minus S&P 500 benchmark, accumulated day by day after the filing). This chart shows the average across <em>all</em> S&amp;P 500 insider open-market purchases since 2017 — it is universe-wide historical evidence, not specific to this stock.
             </p>
             <CARChart series={insiderCarSeries} />
           </div>
@@ -1121,8 +1121,15 @@ function ResearchSnippet({ research, factor }: { research: TickerResearch | unde
   const snippets = research?.by_factor?.[factor] ?? []
   if (snippets.length === 0) return null
   const top = snippets[0]
-  // Strip YAML frontmatter noise from the chunk preview
-  const clean = top.text.replace(/^---[\s\S]*?---/, '').replace(/\s+/g, ' ').trim()
+  // Strip YAML frontmatter and markdown formatting from the chunk preview
+  const clean = top.text
+    .replace(/^---[\s\S]*?---/, '')
+    .replace(/#{1,6}\s+/g, '')
+    .replace(/\*\*(.*?)\*\*/g, '$1')
+    .replace(/\*(.*?)\*/g, '$1')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/\s+/g, ' ')
+    .trim()
   const preview = clean.slice(0, 220)
   const name = top.wikilink.replace(/^\[\[|\]\]$/g, '').split('/').pop() ?? top.wikilink
   return (
@@ -1559,24 +1566,37 @@ export function StockModal({
             )}
           </div>
           <div className="flex items-center gap-4">
-            <button
-              onClick={() =>
-                generateReasoning.mutate(lead, {
-                  onSuccess: data => setReasoning(data),
-                })
-              }
-              disabled={generateReasoning.isPending}
-              className={cn(
-                'num flex items-center gap-1.5 border px-2.5 py-1 text-[10px] tracking-widest transition-colors',
-                reasoning
-                  ? 'border-cyan/40 text-cyan hover:border-cyan/70'
-                  : 'border-border text-muted hover:border-cyan/40 hover:text-cyan',
-                generateReasoning.isPending && 'cursor-wait opacity-60',
+            <div className="flex flex-col items-end gap-0.5">
+              <button
+                onClick={() =>
+                  generateReasoning.mutate(lead, {
+                    onSuccess: data => setReasoning(data),
+                  })
+                }
+                disabled={generateReasoning.isPending}
+                className={cn(
+                  'num flex items-center gap-1.5 border px-2.5 py-1 text-[10px] tracking-widest transition-colors',
+                  reasoning
+                    ? 'border-cyan/40 text-cyan hover:border-cyan/70'
+                    : generateReasoning.isError
+                      ? 'border-down/40 text-down hover:border-down/70'
+                      : 'border-border text-muted hover:border-cyan/40 hover:text-cyan',
+                  generateReasoning.isPending && 'cursor-wait opacity-60',
+                )}
+              >
+                <Sparkles className="h-3 w-3" />
+                {generateReasoning.isPending
+                  ? 'GENERATING…'
+                  : generateReasoning.isError
+                    ? 'FAILED — RETRY'
+                    : reasoning
+                      ? 'REGENERATE'
+                      : 'AI REASONING'}
+              </button>
+              {generateReasoning.isError && (
+                <span className="font-sans text-[9px] text-down/70">requires claude cli in PATH</span>
               )}
-            >
-              <Sparkles className="h-3 w-3" />
-              {generateReasoning.isPending ? 'GENERATING…' : reasoning ? 'REGENERATE' : 'AI REASONING'}
-            </button>
+            </div>
             {hasThesis ? (
               <Link
                 to={`/thesis/${thesis.id}`}

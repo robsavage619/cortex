@@ -525,11 +525,20 @@ function ThesisTable({
 
 // ── Factor bar (z-score visualisation) ────────────────────────────────────────
 
+const FACTOR_TOOLTIPS: Record<string, string> = {
+  MOM:  'Momentum — 12-month price trend vs. the S&P 500 universe. High = sustained outperformer.',
+  LVOL: 'Low Volatility — lower daily swings vs. peers. High = steadier ride, better risk-adjusted returns over time.',
+  SHR:  'Risk-Adjusted Return (Sharpe) — return per unit of volatility over the past 12 months. High = efficient gains.',
+  VAL:  'Value / Earnings Yield — earnings relative to price. High = cheap on fundamentals.',
+  QUAL: 'Quality / Profitability — return on equity + gross profits. High = durable business with pricing power.',
+}
+
 function FactorBar({ label, z }: { label: string; z: number | null }) {
+  const tooltip = FACTOR_TOOLTIPS[label]
   if (z === null) {
     return (
       <div className="flex items-center gap-2">
-        <span className="w-9 font-sans text-[10px] text-muted">{label}</span>
+        <span className="w-9 font-sans text-[10px] text-muted" title={tooltip}>{label}</span>
         <span className="num text-[10px] text-muted">—</span>
       </div>
     )
@@ -538,7 +547,7 @@ function FactorBar({ label, z }: { label: string; z: number | null }) {
   const pct = ((clamped + 3) / 6) * 100
   const fill = z >= 0.5 ? 'bg-up' : z >= -0.5 ? 'bg-warn' : 'bg-down'
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-2" title={tooltip}>
       <span className="w-9 font-sans text-[10px] text-muted">{label}</span>
       <div className="relative h-1.5 w-16 rounded-sm bg-border-bright">
         <div
@@ -579,7 +588,10 @@ function CandidateCard({ candidate, onClick }: { candidate: Candidate; onClick: 
       {/* rank + score */}
       <div className="absolute right-3 top-3 flex items-center gap-1">
         <span className="num text-[9px] text-faint">#{candidate.composite_rank}</span>
-        <span className={cn('num inline-flex items-center rounded-sm border px-1.5 py-0.5 text-[10px] font-bold tabular-nums', scoreColor)}>
+        <span
+          className={cn('num inline-flex items-center rounded-sm border px-1.5 py-0.5 text-[10px] font-bold tabular-nums', scoreColor)}
+          title="Composite z-score: equal-weight average of all 5 factors, expressed in standard deviations vs. the S&P 500 universe. +2σ = top ~2% of stocks."
+        >
           {candidate.composite_score >= 0 ? '+' : ''}{candidate.composite_score.toFixed(2)}z
         </span>
       </div>
@@ -989,7 +1001,7 @@ export function Dashboard() {
           <SectionHeader
             icon={IconDiscovered}
             label="DISCOVERED"
-            sub={lastRun ? `last run ${new Date(lastRun).toLocaleDateString()}` : 'run cortex discover to populate'}
+            sub={lastRun ? `full S&P 500 ranked by composite score · last run ${new Date(lastRun).toLocaleDateString()}` : 'run cortex discover to populate'}
             count={candidates.length}
             tone="watch"
           />
@@ -1016,7 +1028,7 @@ export function Dashboard() {
             <SectionHeader
               icon={IconAlgoBuy}
               label="ALGO BUYS"
-              sub="CORTEX multi-factor buys — built from the engine, not hand-picked"
+              sub="stocks scoring ≥+0.2σ composite — a subset of DISCOVERED that clears the algorithm's buy threshold"
               count={algoBuys.length}
               tone="strong-buy"
             />
