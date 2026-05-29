@@ -438,26 +438,26 @@ function OverviewTab({
   return (
     <div className="grid grid-cols-[1fr_340px] gap-0 h-full">
       {/* Left column */}
-      <div className="overflow-y-auto border-r border-border p-6 space-y-4">
+      <div className="overflow-y-auto border-r border-border p-5 space-y-3">
 
-        {/* Trend snapshot */}
+        {/* Trend snapshot — cyan / technical */}
         {trend && (
-          <div className="space-y-2 rounded-sm border border-border-bright bg-surface-raised p-4">
-            <span className="label block">TREND SNAPSHOT</span>
-            <div className="flex items-center gap-2">
-              <span className={cn('num text-xs font-bold tracking-widest', trend.tone)}>
-                {trend.label}
-              </span>
-            </div>
+          <div className="border border-border-dim border-l-4 border-l-cyan/60 bg-cyan/[0.05] p-4 space-y-2">
+            <span className="num text-[8px] tracking-widest text-cyan/50 block">TECHNICAL</span>
+            <span className="label block text-cyan">TREND SNAPSHOT</span>
+            <span className={cn('num text-xs font-bold tracking-widest', trend.tone)}>
+              {trend.label}
+            </span>
             <p className="font-sans text-[12px] leading-relaxed text-muted border-l-2 border-cyan/30 pl-3">
               {reasoning?.trend ?? trend.detail}
             </p>
           </div>
         )}
 
-        {/* Momentum */}
-        <div className="space-y-2 rounded-sm border border-border-bright bg-surface-raised p-4">
-          <span className="label block">MOMENTUM (RSI)</span>
+        {/* Momentum — sky/open */}
+        <div className="border border-border-dim border-l-4 border-l-open/60 bg-open/[0.04] p-4 space-y-2">
+          <span className="num text-[8px] tracking-widest text-open/50 block">MOMENTUM</span>
+          <span className="label block" style={{ color: 'var(--color-open)' }}>MOMENTUM (RSI)</span>
           <div className="flex items-center gap-2">
             <span className="text-sm">{rsiCtx.emoji}</span>
             <span className={cn('num text-xs font-bold tracking-widest', rsiCtx.tone)}>
@@ -465,7 +465,7 @@ function OverviewTab({
             </span>
           </div>
           {(reasoning?.rsi || rsiCtx.explain) && (
-            <p className="font-sans text-[12px] leading-relaxed text-muted border-l-2 border-cyan/30 pl-3">
+            <p className="font-sans text-[12px] leading-relaxed text-muted border-l-2 border-open/30 pl-3">
               {reasoning?.rsi ?? rsiCtx.explain}
             </p>
           )}
@@ -474,11 +474,12 @@ function OverviewTab({
           </p>
         </div>
 
-        {/* Volume context */}
+        {/* Volume — neutral activity */}
         {volCtx && (
-          <div className="space-y-2 rounded-sm border border-border-bright bg-surface-raised p-4">
+          <div className="border border-border-dim bg-surface-raised p-4 space-y-2">
+            <span className="num text-[8px] tracking-widest text-faint block">ACTIVITY</span>
             <span className="label block">TRADING ACTIVITY</span>
-            <p className="font-sans text-[12px] leading-relaxed text-muted border-l-2 border-cyan/30 pl-3">
+            <p className="font-sans text-[12px] leading-relaxed text-muted border-l-2 border-border-bright pl-3">
               {reasoning?.volume ?? volCtx}
             </p>
             <p className="font-sans text-[11px] text-muted">
@@ -487,9 +488,9 @@ function OverviewTab({
           </div>
         )}
 
-        {/* News */}
+        {/* News — flat, no box */}
         {market?.news_headlines && market.news_headlines.length > 0 && (
-          <div className="space-y-2 rounded-sm border border-border-bright bg-surface-raised p-4">
+          <div className="border-t border-border-dim pt-4 space-y-2">
             <span className="label block">RECENT NEWS</span>
             <div className="space-y-2">
               {market.news_headlines.slice(0, 5).map((h, i) => {
@@ -516,10 +517,11 @@ function OverviewTab({
           </div>
         )}
 
-        {/* Senate trades */}
+        {/* Senate trades — warn/amber / congressional */}
         {ctx?.senate_trades && ctx.senate_trades.length > 0 && (
-          <div className="space-y-2 rounded-sm border border-border-bright bg-surface-raised p-4">
-            <span className="label block">SENATE ACTIVITY</span>
+          <div className="border border-border-dim border-l-4 border-l-warn/60 bg-warn/[0.04] p-4 space-y-2">
+            <span className="num text-[8px] tracking-widest text-warn/50 block">CONGRESSIONAL</span>
+            <span className="label block text-warn">SENATE ACTIVITY</span>
             <p className="font-sans text-[11px] text-muted">
               Members of Congress are required to disclose stock trades. Significant insider buying can be a useful data point.
             </p>
@@ -545,10 +547,11 @@ function OverviewTab({
           </div>
         )}
 
-        {/* Insider buys (Form 4) */}
+        {/* Insider buys — up/green / insider flow */}
         {ctx?.insider_buys && ctx.insider_buys.length > 0 && (
-          <div className="space-y-2 rounded-sm border border-border-bright bg-surface-raised p-4">
-            <span className="label block">INSIDER BUYING</span>
+          <div className="border border-border-dim border-l-4 border-l-up/60 bg-up/[0.04] p-4 space-y-2">
+            <span className="num text-[8px] tracking-widest text-up/50 block">INSIDER FLOW</span>
+            <span className="label block text-up">INSIDER BUYING</span>
             <p className="font-sans text-[11px] text-muted">
               Open-market purchases by officers, directors, and owners (Form 4). All are buys — filed within 2 days of the transaction.
             </p>
@@ -577,10 +580,11 @@ function OverviewTab({
           </div>
         )}
 
-        {/* Activist stakes (SC 13D) */}
+        {/* Activist stakes — violet */}
         {ctx?.activist_stakes && ctx.activist_stakes.length > 0 && (
-          <div className="space-y-2 rounded-sm border border-border-bright bg-surface-raised p-4">
-            <span className="label block">ACTIVIST STAKES</span>
+          <div className="border border-border-dim border-l-4 border-l-violet-400/40 bg-violet-400/[0.03] p-4 space-y-2">
+            <span className="num text-[8px] tracking-widest text-violet-400/40 block">ACTIVIST</span>
+            <span className="label block text-violet-400/70">ACTIVIST STAKES</span>
             <p className="font-sans text-[11px] text-muted">
               SC 13D filings signal an investor has crossed 5% ownership with intent to influence management. Qualitative evidence only — excluded from the CORTEX composite.
             </p>
@@ -589,7 +593,7 @@ function OverviewTab({
                 <div key={i} className="flex items-center justify-between border-b border-border-dim pb-1.5">
                   <span className="font-sans text-[12px] text-ink">{s.filer}</span>
                   <div className="flex items-center gap-2">
-                    <span className="num text-[9px] text-faint uppercase tracking-wide text-cyan-400/70">SC 13D</span>
+                    <span className="num text-[9px] text-faint uppercase tracking-wide text-violet-400/60">SC 13D</span>
                     {s.filing_date && (
                       <span className="num text-[9px] text-faint">{s.filing_date}</span>
                     )}
@@ -600,10 +604,11 @@ function OverviewTab({
           </div>
         )}
 
-        {/* CAR trajectory — universe-wide insider buy signal */}
+        {/* CAR evidence — blue / research */}
         {insiderCarSeries && insiderCarSeries.length > 0 && (
-          <div className="space-y-2 rounded-sm border border-border-bright bg-surface-raised p-4">
-            <span className="label block">FILING EVENT EVIDENCE</span>
+          <div className="border border-border-dim border-l-4 border-l-blue-400/40 bg-blue-400/[0.03] p-4 space-y-2">
+            <span className="num text-[8px] tracking-widest text-blue-400/40 block">RESEARCH</span>
+            <span className="label block text-blue-400/70">FILING EVENT EVIDENCE</span>
             <p className="font-sans text-[11px] text-muted">
               CAR = Cumulative Abnormal Return (stock return minus S&P 500 benchmark, accumulated day by day after the filing). This chart shows the average across <em>all</em> S&amp;P 500 insider open-market purchases since 2017 — it is universe-wide historical evidence, not specific to this stock.
             </p>
@@ -613,10 +618,11 @@ function OverviewTab({
       </div>
 
       {/* Right column */}
-      <div className="overflow-y-auto p-6 space-y-4">
+      <div className="overflow-y-auto p-5 space-y-3">
 
-        {/* Returns */}
-        <div className="space-y-3 rounded-sm border border-border-bright bg-surface-raised p-4">
+        {/* Returns — neutral metric block */}
+        <div className="border border-border-dim bg-surface-raised p-4 space-y-3">
+          <span className="num text-[8px] tracking-widest text-faint block">PERFORMANCE</span>
           <span className="label block">HOW HAS IT PERFORMED?</span>
           <p className="font-sans text-[11px] text-muted">
             Total price return over each lookback window. Compares where the stock is now vs. where it was.
@@ -635,10 +641,11 @@ function OverviewTab({
           </div>
         </div>
 
-        {/* 52W Range */}
+        {/* 52W range — cyan / price */}
         {market?.week_52_low != null && market.week_52_high != null && price != null && (
-          <div className="space-y-3 rounded-sm border border-border-bright bg-surface-raised p-4">
-            <span className="label block">12-MONTH PRICE RANGE</span>
+          <div className="border border-border-dim border-l-4 border-l-cyan/50 bg-cyan/[0.04] p-4 space-y-3">
+            <span className="num text-[8px] tracking-widest text-cyan/50 block">PRICE</span>
+            <span className="label block text-cyan/80">12-MONTH PRICE RANGE</span>
             <div className="space-y-2">
               <RangeBar
                 low={market.week_52_low}
@@ -669,10 +676,11 @@ function OverviewTab({
           </div>
         )}
 
-        {/* P/E */}
+        {/* P/E — warn/amber / valuation */}
         {market?.pe_ratio != null && (
-          <div className="space-y-2 rounded-sm border border-border-bright bg-surface-raised p-4">
-            <span className="label block">PRICE VS EARNINGS (P/E)</span>
+          <div className="border border-border-dim border-l-4 border-l-warn/40 bg-warn/[0.03] p-4 space-y-2">
+            <span className="num text-[8px] tracking-widest text-warn/50 block">VALUATION</span>
+            <span className="label block text-warn/80">PRICE VS EARNINGS (P/E)</span>
             <div className="flex items-baseline gap-2">
               <span className="num text-2xl font-semibold text-ink">
                 {market.pe_ratio.toFixed(1)}×
@@ -685,9 +693,10 @@ function OverviewTab({
           </div>
         )}
 
-        {/* Market Cap */}
+        {/* Market cap — neutral info */}
         {market?.market_cap != null && (
-          <div className="space-y-2 rounded-sm border border-border-bright bg-surface-raised p-4">
+          <div className="border border-border-dim bg-surface-raised p-4 space-y-2">
+            <span className="num text-[8px] tracking-widest text-faint block">FUNDAMENTALS</span>
             <span className="label block">COMPANY SIZE</span>
             <div className="num text-base font-semibold text-ink">
               {getMarketCapLabel(market.market_cap)}
@@ -1586,15 +1595,15 @@ export function StockModal({
               >
                 <Sparkles className="h-3 w-3" />
                 {generateReasoning.isPending
-                  ? 'GENERATING…'
+                  ? 'ANALYSING…'
                   : generateReasoning.isError
                     ? 'FAILED — RETRY'
                     : reasoning
-                      ? 'REGENERATE'
-                      : 'AI REASONING'}
+                      ? 'REFRESH ANALYSIS'
+                      : 'DEEP ANALYSIS'}
               </button>
               {generateReasoning.isError && (
-                <span className="font-sans text-[9px] text-down/70">requires claude cli in PATH</span>
+                <span className="font-sans text-[9px] text-down/70">{generateReasoning.error instanceof Error ? generateReasoning.error.message : 'server error'}</span>
               )}
             </div>
             {hasThesis ? (

@@ -782,142 +782,260 @@ def research_ticker(ticker: str, k: int = 2) -> dict[str, Any]:
     }
 
 
+def _reason_trend(price: float | None, change: float | None) -> str | None:
+    if price is None:
+        return None
+    chg = change or 0.0
+    direction = "gaining" if chg > 0 else "sliding"
+    mag = abs(chg)
+    if mag > 3:
+        strength = "sharply"
+    elif mag > 1:
+        strength = "meaningfully"
+    else:
+        strength = "modestly"
+    return (
+        f"Trading at ${price:,.2f}, {direction} {strength} at {chg:+.2f}% today. "
+        f"{'Buyers are in control intraday.' if chg >= 0 else 'Sellers have the upper hand intraday.'}"
+    )
+
+
+def _reason_rsi(rsi: float | None) -> str | None:
+    if rsi is None:
+        return None
+    if rsi >= 70:
+        return (
+            f"RSI at {rsi:.0f} — firmly overbought. The move has been fast; "
+            f"short-term mean-reversion risk is elevated. Not a sell signal, but chasing here carries a poor risk/reward."
+        )
+    if rsi >= 60:
+        return (
+            f"RSI at {rsi:.0f} — strong momentum without being stretched. "
+            f"Buyers are pressing but the reading is not yet a caution flag."
+        )
+    if rsi >= 40:
+        return (
+            f"RSI at {rsi:.0f} — neutral. Neither side has clear momentum dominance. "
+            f"Wait for a decisive move in either direction before adding conviction."
+        )
+    if rsi >= 30:
+        return (
+            f"RSI at {rsi:.0f} — weak momentum. Selling has outpaced buying recently. "
+            f"Worth watching for stabilization before building a position."
+        )
+    return (
+        f"RSI at {rsi:.0f} — oversold. The stock has been aggressively sold. "
+        f"Bounces are possible but verify the catalyst before acting — oversold can stay oversold."
+    )
+
+
+def _reason_pe(pe: float | None) -> str | None:
+    if pe is None or pe <= 0:
+        return None
+    if pe > 60:
+        return (
+            f"At {pe:.1f}×, the market is pricing in exceptional, sustained growth. "
+            f"Any disappointment on earnings or guidance tends to compress multiples fast — execution risk is high."
+        )
+    if pe > 35:
+        return (
+            f"At {pe:.1f}×, this is a premium multiple — meaningful above the ~21× S&P average. "
+            f"Justified only if growth is durable; re-rates quickly if momentum stalls."
+        )
+    if pe > 20:
+        return (
+            f"At {pe:.1f}×, a modest premium to the market. "
+            f"Reasonable for a quality business growing above-average — not stretched, not cheap."
+        )
+    if pe > 12:
+        return (
+            f"At {pe:.1f}×, at or below the S&P average. "
+            f"The market expects limited growth or is pricing in risk. Either a value opportunity or a value trap — context matters."
+        )
+    return (
+        f"At {pe:.1f}×, deeply cheap by market standards. "
+        f"The discount is either a genuine opportunity or reflects real fundamental risk. Investigate the reason before assuming upside."
+    )
+
+
+def _reason_range(
+    price: float | None, low: float | None, high: float | None
+) -> str | None:
+    if price is None or low is None or high is None:
+        return None
+    rng = high - low
+    if rng <= 0:
+        return None
+    pct = ((price - low) / rng) * 100
+    if pct >= 85:
+        return (
+            f"Near its 52-week high (${high:,.2f}), with {pct:.0f}% of the range behind it. "
+            f"The run has been strong — understand the catalyst and whether it's priced in before adding."
+        )
+    if pct >= 60:
+        return (
+            f"In the upper portion of its 52-week range (${low:,.2f}–${high:,.2f}). "
+            f"Momentum is constructive; not at extremes."
+        )
+    if pct >= 40:
+        return (
+            f"Mid-range over the past year (${low:,.2f}–${high:,.2f}). "
+            f"Balanced price action — neither a breakout nor a breakdown story right now."
+        )
+    if pct >= 15:
+        return (
+            f"In the lower half of its 52-week range (${low:,.2f}–${high:,.2f}). "
+            f"Either building a base or in persistent weakness — the reason for the discount matters."
+        )
+    return (
+        f"Near its 52-week low (${low:,.2f}), with only {pct:.0f}% of the range recovered. "
+        f"Heavy selling has occurred. Know exactly why before buying into it."
+    )
+
+
+def _reason_market_cap(cap: float | None) -> str | None:
+    if cap is None:
+        return None
+    if cap >= 1e12:
+        t = f"${cap / 1e12:.1f}T mega-cap"
+        liq = "among the most liquid equities globally — institutional flows dominate price action"
+    elif cap >= 2e11:
+        t = f"${cap / 1e9:.0f}B large-cap"
+        liq = (
+            "deep institutional coverage and high liquidity — bid-ask spreads are tight"
+        )
+    elif cap >= 1e10:
+        t = f"${cap / 1e9:.0f}B mid-large cap"
+        liq = "solid liquidity for most position sizes"
+    elif cap >= 2e9:
+        t = f"${cap / 1e9:.1f}B mid-cap"
+        liq = "adequate liquidity but more sensitive to large order flows"
+    else:
+        t = f"${cap / 1e6:.0f}M small-cap"
+        liq = "lower liquidity — wider spreads and thinner order books"
+    return f"{t} — {liq}."
+
+
+def _reason_z(label: str, z: float | None, raw_fmt: str) -> str | None:
+    if z is None:
+        return None
+    if z >= 1.5:
+        tier = f"top-tier ({z:+.2f}σ)"
+        impl = "a standout relative to the S&P 500 universe"
+    elif z >= 0.5:
+        tier = f"above-average ({z:+.2f}σ)"
+        impl = "clearly above the cross-sectional median"
+    elif z >= -0.5:
+        tier = f"average ({z:+.2f}σ)"
+        impl = "in line with the broad universe — not a differentiating factor"
+    elif z >= -1.5:
+        tier = f"below-average ({z:+.2f}σ)"
+        impl = "a headwind relative to peers"
+    else:
+        tier = f"poor ({z:+.2f}σ)"
+        impl = "a meaningful drag — well below the cross-sectional median"
+    return f"{label} is {tier} — {raw_fmt}, {impl}."
+
+
+def _reason_cortex(
+    score: float | None, rank: int | None, above_sma: bool | None, ticker: str = ""
+) -> str | None:
+    if score is None:
+        return None
+    trend_gate = (
+        "passes the 200-day trend gate"
+        if above_sma
+        else "currently below the 200-day trend gate"
+    )
+    if score >= 1.0:
+        stance = "a high-conviction systematic long"
+    elif score >= 0.5:
+        stance = "scoring well on the multi-factor composite"
+    elif score >= 0.0:
+        stance = "modestly positive — no strong factor tailwinds or headwinds"
+    elif score >= -0.5:
+        stance = "slightly below average on the composite — factor mix is mixed"
+    else:
+        stance = "weak on the composite — multiple factors are below-average"
+    rank_str = f"ranked #{rank} in the discovery universe" if rank else ""
+    name = ticker or "This name"
+    return f"CORTEX composite {score:+.2f}σ — {stance}{', ' + rank_str if rank_str else ''}. {name} {trend_gate}."
+
+
 @app.post("/context/{ticker}/reason")
 def generate_reasoning(ticker: str) -> dict[str, Any]:
-    """Shell to the local claude CLI for AI reasoning on a stock's key metrics."""
-    import json
-    import shutil
-    import subprocess
+    """Generate data-driven reasoning for a stock's key metrics (no external calls)."""
+    import contextlib
 
     from cortex.sources.market import MarketSourceError
     from cortex.sources.market import context_for as market_ctx
 
     tk = ticker.upper()
 
-    # Gather all available context
-    mkt_data: dict[str, Any] = {}
-    try:
+    mkt: Any = None
+    with contextlib.suppress(MarketSourceError):
         mkt = market_ctx(ticker)
-        mkt_data = {
-            "price": mkt.price,
-            "day_change_percent": mkt.day_change_percent,
-            "week_52_high": mkt.week_52_high,
-            "week_52_low": mkt.week_52_low,
-            "market_cap": mkt.market_cap,
-            "pe_ratio": mkt.pe_ratio,
-            "news_headlines": mkt.news_headlines[:5],
-        }
-    except MarketSourceError:
-        pass
 
-    cortex_data: dict[str, Any] = {}
+    cand: Any = None
     try:
         candidates = discovery.list_candidates(_db())
-        match = next((c for c in candidates if c.ticker == tk), None)
-        if match:
-            cortex_data = {
-                "composite_score": match.composite_score,
-                "composite_rank": match.composite_rank,
-                "above_200d_sma": match.above_200d_sma,
-                "momentum_12_1": match.momentum_12_1,
-                "vol_252d": match.vol_252d,
-                "sharpe_12m": match.sharpe_12m,
-                "earnings_yield": match.earnings_yield,
-                "roe": match.roe,
-                "z_momentum": match.z_momentum,
-                "z_low_vol": match.z_low_vol,
-                "z_sharpe": match.z_sharpe,
-                "z_value": match.z_value,
-                "z_quality": match.z_quality,
-            }
+        cand = next((c for c in candidates if c.ticker == tk), None)
     except Exception:
         pass
 
-    prompt = f"""You are analyzing stock {tk} for an investment research dashboard.
+    price = mkt.price if mkt else None
+    change = mkt.day_change_percent if mkt else None
+    pe = mkt.pe_ratio if mkt else None
+    low52 = mkt.week_52_low if mkt else None
+    high52 = mkt.week_52_high if mkt else None
+    cap = mkt.market_cap if mkt else None
 
-Given the data below, write direct, intelligent reasoning for each section.
-Be specific about the actual numbers. Avoid generic disclaimers.
-Write as if explaining to a sophisticated investor who has already accepted the risk.
+    def _pct(v: float | None) -> str:
+        return f"{v * 100:.1f}%" if v is not None else "—"
 
-MARKET DATA:
-{json.dumps(mkt_data, indent=2)}
-
-CORTEX FACTOR SCORES (z-scores vs S&P 500 universe):
-{json.dumps(cortex_data, indent=2) if cortex_data else "Not in current discovery run"}
-
-Return ONLY a JSON object with exactly these keys. Each value is 1-2 sentences max:
-{{
-  "trend": "interpretation of price trend and what it means right now",
-  "rsi": "what the current momentum reading implies for near-term action",
-  "volume": "what current trading activity says about institutional conviction",
-  "pe": "whether this valuation is justified given the growth profile",
-  "range": "where in the 52-week range this sits and what that implies",
-  "market_cap": "one sentence on the size and liquidity implications",
-  "cortex_summary": "what the CORTEX composite score says about this name vs peers",
-  "momentum_factor": "what the momentum z-score implies",
-  "low_vol_factor": "what the volatility profile implies",
-  "sharpe_factor": "what the risk-adjusted return says",
-  "value_factor": "what earnings yield says about valuation",
-  "quality_factor": "what ROE says about capital efficiency"
-}}"""
-
-    # Locate the claude binary: PATH first, then an explicit CORTEX_CLAUDE_BIN override.
-    claude_bin = shutil.which("claude")
-    if claude_bin is None:
-        import os
-
-        override = os.environ.get("CORTEX_CLAUDE_BIN", "")
-        if override and Path(override).exists():
-            claude_bin = override
-
-    if claude_bin is None:
-        raise HTTPException(
-            status_code=503,
-            detail="claude CLI not found — ensure Claude Code is installed",
+    reasoning = {
+        "trend": _reason_trend(price, change),
+        "rsi": None,
+        "volume": None,
+        "pe": _reason_pe(pe),
+        "range": _reason_range(price, low52, high52),
+        "market_cap": _reason_market_cap(cap),
+        "cortex_summary": _reason_cortex(
+            cand.composite_score if cand else None,
+            cand.composite_rank if cand else None,
+            cand.above_200d_sma if cand else None,
+            tk,
         )
-
-    try:
-        result = subprocess.run(
-            [claude_bin, "-p", prompt, "--output-format", "json"],
-            capture_output=True,
-            text=True,
-            timeout=120,
-            stdin=subprocess.DEVNULL,
-        )
-    except subprocess.TimeoutExpired:
-        raise HTTPException(status_code=504, detail="claude CLI timed out") from None
-    except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"claude CLI error: {exc}") from exc
-
-    if result.returncode != 0:
-        stderr = result.stderr.strip()
-        raise HTTPException(
-            status_code=502,
-            detail=f"claude CLI failed: {stderr or result.stdout[:200]}",
-        )
-
-    # Parse the outer JSON envelope from claude --output-format json
-    try:
-        envelope = json.loads(result.stdout)
-        raw_text: str = envelope.get("result", "")
-    except json.JSONDecodeError:
-        raw_text = result.stdout
-
-    # Extract the JSON object from the model's response
-    start = raw_text.find("{")
-    end = raw_text.rfind("}") + 1
-    if start == -1 or end == 0:
-        raise HTTPException(
-            status_code=502,
-            detail=f"claude returned unexpected output: {raw_text[:200]}",
-        )
-
-    try:
-        reasoning = json.loads(raw_text[start:end])
-    except json.JSONDecodeError as exc:
-        raise HTTPException(
-            status_code=502, detail=f"failed to parse claude JSON output: {exc}"
-        ) from exc
+        if cand
+        else None,
+        "momentum_factor": _reason_z(
+            "12-month momentum",
+            cand.z_momentum if cand else None,
+            _pct(cand.momentum_12_1) + " trailing return" if cand else "—",
+        ),
+        "low_vol_factor": _reason_z(
+            "Volatility",
+            cand.z_low_vol if cand else None,
+            _pct(cand.vol_252d) + " annualised vol" if cand else "—",
+        ),
+        "sharpe_factor": _reason_z(
+            "Risk-adjusted return",
+            cand.z_sharpe if cand else None,
+            f"{cand.sharpe_12m:.2f} Sharpe"
+            if cand and cand.sharpe_12m is not None
+            else "—",
+        ),
+        "value_factor": _reason_z(
+            "Earnings yield",
+            cand.z_value if cand else None,
+            _pct(cand.earnings_yield) + " yield" if cand else "—",
+        ),
+        "quality_factor": _reason_z(
+            "Return on equity",
+            cand.z_quality if cand else None,
+            _pct(cand.roe) + " ROE" if cand else "—",
+        ),
+    }
 
     return {"banner": _BANNER, "ticker": tk, "reasoning": reasoning}
 
