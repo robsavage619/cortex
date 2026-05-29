@@ -66,13 +66,13 @@ def _dashboard_note(theses: list[Thesis], generated_on: date) -> str:
         f"| Thesis | Tickers | Author | Conviction | Review |\n"
         f"|---|---|---|---|---|\n"
         f"{rows_open}"
-        if open_t else "_No open theses._"
+        if open_t
+        else "_No open theses._"
     )
     closed_section = (
-        f"| Thesis | Tickers | Author | Status |\n"
-        f"|---|---|---|---|\n"
-        f"{rows_closed}"
-        if closed_t else "_None yet._"
+        f"| Thesis | Tickers | Author | Status |\n|---|---|---|---|\n{rows_closed}"
+        if closed_t
+        else "_None yet._"
     )
 
     return f"""{_BANNER}

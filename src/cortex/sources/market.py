@@ -77,9 +77,7 @@ def history_for(ticker: str, *, period: str = "6mo") -> list[PriceBar]:
     try:
         frame = yf.Ticker(ticker).history(period=period, interval=interval)
     except Exception as exc:
-        raise MarketSourceError(
-            f"yfinance history failed for {ticker}: {exc}"
-        ) from exc
+        raise MarketSourceError(f"yfinance history failed for {ticker}: {exc}") from exc
 
     bars: list[PriceBar] = []
     for idx, row in frame.iterrows():

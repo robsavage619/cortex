@@ -83,9 +83,25 @@ def _validate(
 
 def _row_to_thesis(row: tuple) -> Thesis:
     (
-        id_, tickers, author, opened, conviction, claim, falsifier, reasoning,
-        evidence, review_date, status, entry_price, entry_date, base_rate,
-        pre_mortem, change_my_mind, sizing_rationale, why_now, activate_at,
+        id_,
+        tickers,
+        author,
+        opened,
+        conviction,
+        claim,
+        falsifier,
+        reasoning,
+        evidence,
+        review_date,
+        status,
+        entry_price,
+        entry_date,
+        base_rate,
+        pre_mortem,
+        change_my_mind,
+        sizing_rationale,
+        why_now,
+        activate_at,
         created_at,
     ) = row
     return Thesis(
@@ -157,10 +173,25 @@ def create(
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [
-                thesis_id, tickers, author, opened_, conviction, claim,
-                falsifier, reasoning, evidence_, review_date, status,
-                entry_price, entry_date, base_rate, pre_mortem, change_my_mind,
-                sizing_rationale, why_now, activate_at,
+                thesis_id,
+                tickers,
+                author,
+                opened_,
+                conviction,
+                claim,
+                falsifier,
+                reasoning,
+                evidence_,
+                review_date,
+                status,
+                entry_price,
+                entry_date,
+                base_rate,
+                pre_mortem,
+                change_my_mind,
+                sizing_rationale,
+                why_now,
+                activate_at,
             ],
         )
     return get(thesis_id, db_path=db_path)

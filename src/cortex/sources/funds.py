@@ -237,14 +237,22 @@ def fetch_all_manager_moves(
         except Exception:  # noqa: BLE001 - log and skip this quarter
             log.warning(
                 "funds: %s (%s) parse failed for pair %d/%d (period=%s), skipping",
-                manager, cik, k, n - 1, period,
+                manager,
+                cik,
+                k,
+                n - 1,
+                period,
             )
             continue
 
         moves = _diff_holdings(manager, cik, later_h, earlier_h, period)
         log.info(
             "funds: %s — %d moves (period=%s, pair %d/%d)",
-            manager, len(moves), period, k + 1, n - 1,
+            manager,
+            len(moves),
+            period,
+            k + 1,
+            n - 1,
         )
         all_moves.extend(moves)
 
@@ -270,6 +278,7 @@ def sync_all_managers(db_path: Path, *, historical: bool = False) -> int:
 
 
 # ── persistence ──────────────────────────────────────────────────────────────
+
 
 def store_fund_moves(moves: list[FundMove], db_path: Path) -> int:
     """Upsert moves into fund_holdings. Returns the count of new rows."""

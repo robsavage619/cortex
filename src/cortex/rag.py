@@ -20,6 +20,7 @@ class Embedder(Protocol):
 
     def embed(self, texts: list[str]) -> Iterable[Iterable[float]]: ...
 
+
 _MODEL = "BAAI/bge-small-en-v1.5"
 _CHUNK_SIZE = 400
 _CHUNK_OVERLAP = 50

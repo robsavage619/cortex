@@ -16,6 +16,7 @@ DEFAULT_LOOKBACK_DAYS = 15
 
 # ── Domain model ──────────────────────────────────────────────────────────────
 
+
 @dataclass
 class VolStock:
     """A row of the swing screen.
@@ -48,6 +49,7 @@ class VolStock:
 
 # ── Metric computation ─────────────────────────────────────────────────────────
 
+
 def _compute_metrics(
     tickers: list[str], lookback_days: int
 ) -> dict[str, dict[str, Any]]:
@@ -60,7 +62,7 @@ def _compute_metrics(
     import yfinance as yf
 
     log.info("Downloading 3mo OHLC for %d tickers…", len(tickers))
-    raw = yf.download(
+    raw: Any = yf.download(
         tickers,
         period="3mo",
         auto_adjust=True,
@@ -212,6 +214,7 @@ def _fetch_company_names(tickers: list[str]) -> dict[str, str | None]:
 
 # ── Storage ───────────────────────────────────────────────────────────────────
 
+
 def _store(stocks: list[VolStock], db_path: Path) -> None:
     """Atomically replace the volatility_screen table contents."""
     from cortex.storage.db import connect
@@ -309,6 +312,7 @@ def list_volatility_screen(db_path: Path) -> list[VolStock]:
 
 # ── Main pipeline ─────────────────────────────────────────────────────────────
 
+
 def run_volatility_screen(
     db_path: Path,
     top_n: int = 75,
@@ -342,7 +346,9 @@ def run_volatility_screen(
         reverse=True,
     )
 
-    top_tickers = [t for t in ranked[:top_n] if (metrics.get(t, {}).get("swing_score") or 0.0) > 0]
+    top_tickers = [
+        t for t in ranked[:top_n] if (metrics.get(t, {}).get("swing_score") or 0.0) > 0
+    ]
     log.info("Swing screen: fetching company names for %d tickers", len(top_tickers))
     names = _fetch_company_names(top_tickers)
 
@@ -373,7 +379,9 @@ def run_volatility_screen(
         )
 
     if not stocks:
-        log.warning("Swing screen: no scored stocks — aborting store to preserve existing data")
+        log.warning(
+            "Swing screen: no scored stocks — aborting store to preserve existing data"
+        )
         return stocks
 
     log.info("Swing screen: storing %d stocks", len(stocks))

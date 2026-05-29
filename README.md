@@ -235,8 +235,12 @@ sensitive is committed.
 
 ## Engineering quality
 
-- **69 tests** across the suite, covering storage, thesis CRUD, calibration, RAG, the
-  backtest math, and HTTP-mocked data sources (`respx`).
+- **69 tests** concentrated on the pure-logic core — calibration math, thesis CRUD,
+  storage, RAG, and the backtest's scoring helpers — plus HTTP-mocked data sources
+  (`respx`). The ingestion, API, and CLI layers are exercised manually, not yet in the
+  automated suite.
+- **Clean static analysis:** `ruff check` and `ruff format` pass repo-wide; `pyright`
+  (basic) reports zero errors across `src/`.
 - **Strict tooling:** `ruff` (format + lint + isort), `pyright` (basic), `uv` lockfile.
 - **Typed throughout:** `from __future__ import annotations`, `X | None` unions,
   dataclasses, Pydantic request models.

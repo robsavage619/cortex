@@ -337,13 +337,9 @@ def _cmd_vol_screen(args: argparse.Namespace) -> None:
     print(f"Swing screen — top {len(stocks)} by consistent dollar swing")
     for s in stocks:
         adr = f"${s.avg_dollar_range:.2f}" if s.avg_dollar_range is not None else "—"
-        cons = (
-            f"{s.range_consistency:.2f}" if s.range_consistency is not None else "—"
-        )
+        cons = f"{s.range_consistency:.2f}" if s.range_consistency is not None else "—"
         pct = f"{s.avg_range_pct * 100:.1f}%" if s.avg_range_pct is not None else "—"
-        osc = (
-            f"{s.oscillation_score:.2f}" if s.oscillation_score is not None else "—"
-        )
+        osc = f"{s.oscillation_score:.2f}" if s.oscillation_score is not None else "—"
         print(
             f"  #{s.rank:2d} {s.ticker:<6} score={s.swing_score:7.3f}"
             f"  adr={adr:>9}  consistency={cons}  range={pct}  osc={osc}"
@@ -351,7 +347,9 @@ def _cmd_vol_screen(args: argparse.Namespace) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(prog="cortex", description="CORTEX — factor research CLI")
+    parser = argparse.ArgumentParser(
+        prog="cortex", description="CORTEX — factor research CLI"
+    )
     sub = parser.add_subparsers(dest="command", required=True)
 
     sub.add_parser("db-init", help="Create / migrate the DuckDB schema")

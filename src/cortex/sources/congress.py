@@ -81,6 +81,7 @@ class CongressTrade:
 
 # ── date / text helpers ────────────────────────────────────────────────────────
 
+
 def _parse_date(value: object) -> date | None:
     if not value or not isinstance(value, str):
         return None
@@ -114,6 +115,7 @@ def _clean_filer(filer: str) -> str:
 
 
 # ── HTTP with retry ──────────────────────────────────────────────────────────
+
 
 def _request_with_retry(
     client: httpx.Client,
@@ -181,6 +183,7 @@ def _accept_agreement(client: httpx.Client) -> None:
 
 
 # ── scraping ───────────────────────────────────────────────────────────────────
+
 
 def _post_report_page(
     client: httpx.Client,
@@ -432,6 +435,7 @@ def filter_trades(
 
 # ── persistence (DuckDB mirror) ──────────────────────────────────────────────
 
+
 def store_trades(trades: list[CongressTrade], db_path: Path) -> int:
     """Upsert trades into congress_trades. Returns the count of new rows."""
     from cortex.storage.db import connect
@@ -654,7 +658,7 @@ def congress_stats(db_path: Path, *, days: int = 365) -> dict[str, Any]:
             }
             for t, v in by_ticker.items()
         ),
-        key=lambda r: abs(r["net_notional"]),
+        key=lambda r: abs(float(r["net_notional"] or 0.0)),
         reverse=True,
     )[:25]
     top_members = sorted(

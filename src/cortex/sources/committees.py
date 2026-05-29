@@ -60,7 +60,7 @@ _RETIRED_HIGH_COMMITTEE: set[str] = {
     # Finance, Armed Services (MS, 1978–2018)
     "cochran",
     # Appropriations (Chair/Ranking), Intelligence (KY, 1985–2015)
-    "mcconnell",   # still serving — covered by dynamic too
+    "mcconnell",  # still serving — covered by dynamic too
     # Finance, Budget (OR, 1996–present) — dynamic covers but belt-and-suspenders
     "wyden",
     # Banking, Armed Services, Intelligence (VA, 2009–2023)
@@ -79,9 +79,7 @@ def _fetch_dynamic_weights() -> dict[str, float]:
         "/committee-membership-current.json"
     )
     try:
-        req = urllib.request.Request(
-            url, headers={"User-Agent": sec_user_agent()}
-        )
+        req = urllib.request.Request(url, headers={"User-Agent": sec_user_agent()})
         with urllib.request.urlopen(req, timeout=15) as r:
             committees: dict[str, list[dict]] = json.loads(r.read())
     except Exception as exc:  # noqa: BLE001
@@ -90,8 +88,7 @@ def _fetch_dynamic_weights() -> dict[str, float]:
 
     # Load bioguide → last name from current legislators
     leg_url = (
-        "https://unitedstates.github.io/congress-legislators"
-        "/legislators-current.json"
+        "https://unitedstates.github.io/congress-legislators/legislators-current.json"
     )
     try:
         with urllib.request.urlopen(leg_url, timeout=15) as r:

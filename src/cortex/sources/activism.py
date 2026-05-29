@@ -58,6 +58,7 @@ class ActivistEvent:
 def _set_identity() -> None:
     try:
         import edgar
+
         edgar.set_identity(_IDENTITY)
     except ImportError as exc:
         raise ActivismSourceError("edgartools is not installed") from exc
@@ -72,8 +73,7 @@ def _fetch_cik_ticker_map() -> dict[str, str]:
     )
     resp.raise_for_status()
     return {
-        str(v["cik_str"]).zfill(10): v["ticker"].upper()
-        for v in resp.json().values()
+        str(v["cik_str"]).zfill(10): v["ticker"].upper() for v in resp.json().values()
     }
 
 
@@ -158,16 +158,24 @@ def fetch_activism_events(
             )
 
         if (i + 1) % 50 == 0:
-            log.info("activism: %d/%d tickers scanned, %d events so far",
-                     i + 1, len(ticker_list), len(events))
+            log.info(
+                "activism: %d/%d tickers scanned, %d events so far",
+                i + 1,
+                len(ticker_list),
+                len(events),
+            )
         time.sleep(_RATE_SLEEP)
 
-    log.info("activism: total events: %d across %d tickers", len(events),
-             len({e.ticker for e in events}))
+    log.info(
+        "activism: total events: %d across %d tickers",
+        len(events),
+        len({e.ticker for e in events}),
+    )
     return events
 
 
 # ── persistence ───────────────────────────────────────────────────────────────
+
 
 def store_activism_events(events: list[ActivistEvent], db_path: Path) -> int:
     """Upsert activism events into activist_stakes. Returns new-row count."""

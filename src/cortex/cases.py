@@ -166,8 +166,7 @@ def _headline(ticker: str, bull: list[CasePoint]) -> str:
 
 def _summary(c: Candidate, bull: list[CasePoint], risk: list[CasePoint]) -> str:
     rank = (
-        f"ranks #{c.composite_rank} of the discovered set "
-        f"at {c.composite_score:+.2f}σ"
+        f"ranks #{c.composite_rank} of the discovered set at {c.composite_score:+.2f}σ"
     )
     if bull:
         names = ", ".join(

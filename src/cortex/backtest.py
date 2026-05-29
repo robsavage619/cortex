@@ -52,6 +52,7 @@ _TRADING_DAYS = 252
 
 # ── amount parsing ───────────────────────────────────────────────────────────
 
+
 def _amount_midpoint(amount: str) -> float:
     """Map a Senate dollar-range string to a midpoint notional (USD)."""
     nums = [
@@ -76,6 +77,7 @@ def _congress_sign(transaction_type: str) -> int:
 
 
 # ── event loading (point-in-time) ────────────────────────────────────────────
+
 
 @dataclass
 class _Event:
@@ -162,8 +164,11 @@ def _load_activism_events(db_path: Path) -> list[_Event]:
             ).fetchall()
     except Exception:  # noqa: BLE001 - table may not exist yet
         return []
-    return [_Event(ticker.upper(), filing_date, 1.0) for ticker, filing_date in rows
-            if filing_date is not None]
+    return [
+        _Event(ticker.upper(), filing_date, 1.0)
+        for ticker, filing_date in rows
+        if filing_date is not None
+    ]
 
 
 def _load_insider_events(db_path: Path) -> list[_Event]:
@@ -233,6 +238,7 @@ def _flow_score(
 
 # ── cross-sectional helpers ──────────────────────────────────────────────────
 
+
 def _zscore(values: np.ndarray) -> np.ndarray:
     """Winsorized cross-sectional z-score; NaNs preserved."""
     mask = ~np.isnan(values)
@@ -263,6 +269,7 @@ def _spearman_ic(signal: np.ndarray, fwd: np.ndarray) -> float | None:
 
 
 # ── result model ─────────────────────────────────────────────────────────────
+
 
 @dataclass
 class StrategyResult:
@@ -363,8 +370,8 @@ def _build_signals(
         cortex = np.nanmean(np.vstack([price, fund, flow]), axis=0)
         price_fund = np.nanmean(np.vstack([price, fund]), axis=0)
     return {
-        "cortex": cortex,        # price + fundamental + flow (full)
-        "price": price,          # null model (mom + trend, no low-vol)
+        "cortex": cortex,  # price + fundamental + flow (full)
+        "price": price,  # null model (mom + trend, no low-vol)
         "price_fund": price_fund,  # price + fundamental (no flow)
     }
 
@@ -418,8 +425,15 @@ def run_backtest(
     n_names = price_arr.shape[1]
     variant_keys = ("cortex", "price", "price_fund")
     factor_keys = (
-        "mom", "trend", "vol", "value", "quality", "congress", "fund",
-        "activism", "insider",
+        "mom",
+        "trend",
+        "vol",
+        "value",
+        "quality",
+        "congress",
+        "fund",
+        "activism",
+        "insider",
     )
 
     rets: dict[str, list[float]] = {k: [] for k in variant_keys}
@@ -486,10 +500,7 @@ def run_backtest(
                 insider[col_idx[t]] = v
 
         eligible = (
-            np.isfinite(p_now)
-            & ~np.isnan(mom)
-            & ~np.isnan(trend)
-            & ~np.isnan(vol)
+            np.isfinite(p_now) & ~np.isnan(mom) & ~np.isnan(trend) & ~np.isnan(vol)
         )
         if eligible.sum() < 50:
             continue
@@ -577,7 +588,13 @@ def run_backtest(
         ic_m, ic_t = _ic_stats(var_ic[vk])
         variants.append(
             StrategyResult(
-                labels[vk], len(rets[vk]), ic_m, ic_t, cagr, sharpe, dd,
+                labels[vk],
+                len(rets[vk]),
+                ic_m,
+                ic_t,
+                cagr,
+                sharpe,
+                dd,
                 _hit(rets[vk]),
                 float(np.mean(turns[vk])) if turns[vk] else 0.0,
                 [float(x) for x in decile_cagr] if vk == "cortex" else [],
@@ -602,6 +619,7 @@ def run_backtest(
 
 
 # ── pre-registered OOS congress test ─────────────────────────────────────────
+
 
 @dataclass
 class CongressOOSReport:
@@ -659,8 +677,11 @@ def run_congress_oos(
     log.info("Congress OOS universe: %d tickers", len(tickers))
 
     raw: Any = yf.download(
-        tickers, start=f"{start_year - 1}-01-01", auto_adjust=True,
-        progress=False, threads=True,
+        tickers,
+        start=f"{start_year - 1}-01-01",
+        auto_adjust=True,
+        progress=False,
+        threads=True,
     )
     closes: Any = raw["Close"] if len(tickers) > 1 else raw[["Close"]]
     closes = closes.dropna(how="all")
@@ -759,9 +780,7 @@ def run_congress_oos(
             "INTERESTING but UNCONFIRMED — OOS IC t-stat ≥ 2.0, below the 3.0 bar."
         )
     else:
-        verdict = (
-            "NO EDGE — OOS IC t-stat < 2.0; congress factor does not survive OOS."
-        )
+        verdict = "NO EDGE — OOS IC t-stat < 2.0; congress factor does not survive OOS."
 
     oos_start = date(insample_end_year + 1, 1, 1)
     is_start = date(start_year, 1, 1)

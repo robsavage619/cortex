@@ -523,7 +523,7 @@ def _fetch_submissions_primary_docs(cik: str) -> dict[str, str]:
         forms = block.get("form", [])
         acc_nos = block.get("accessionNumber", [])
         primary_docs = block.get("primaryDocument", [])
-        for form, acc, doc in zip(forms, acc_nos, primary_docs):
+        for form, acc, doc in zip(forms, acc_nos, primary_docs, strict=False):
             if form == "4" and doc:
                 result[acc] = doc
 
@@ -605,7 +605,9 @@ def _fetch_primary_doc_map(
     return acc_to_doc
 
 
-def _fetch_form4_xml(cik: str, acc_no: str, primary_doc: str | None = None) -> str | None:
+def _fetch_form4_xml(
+    cik: str, acc_no: str, primary_doc: str | None = None
+) -> str | None:
     """Fetch Form 4 primary XML for a given accession number.
 
     Uses primary_doc (from submissions JSON) when available; falls back to
@@ -658,7 +660,7 @@ def _fetch_form4_xml(cik: str, acc_no: str, primary_doc: str | None = None) -> s
             for line in resp.text.splitlines():
                 stripped = line.strip()
                 if stripped.startswith("<FILENAME>"):
-                    fname = stripped[len("<FILENAME>"):].strip()
+                    fname = stripped[len("<FILENAME>") :].strip()
                     if fname.endswith(".xml"):
                         text = _get(f"{base}/{fname}")
                         if text:

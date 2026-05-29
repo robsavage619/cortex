@@ -28,9 +28,9 @@ _WEB_DIST = Path(__file__).parents[2] / "web" / "dist"
 
 def _apply_schema_on_startup() -> None:
     from contextlib import suppress
-    with suppress(Exception):
-        with connect(load_settings().duckdb_path) as conn:
-            apply_schema(conn)
+
+    with suppress(Exception), connect(load_settings().duckdb_path) as conn:
+        apply_schema(conn)
 
 
 _apply_schema_on_startup()
@@ -77,7 +77,9 @@ def _run_refresh() -> None:
             _refresh_state["steps"]["congress"] = "running"
             trades = fetch_senate_trades(since=recent_window(120), max_reports=400)
             new = store_trades(trades, db)
-            _refresh_state["steps"]["congress"] = f"done — {len(trades)} trades ({new} new)"
+            _refresh_state["steps"]["congress"] = (
+                f"done — {len(trades)} trades ({new} new)"
+            )
         except Exception as exc:  # noqa: BLE001 - record and continue to discovery
             log.warning("refresh: congress sync failed: %s", exc)
             _refresh_state["steps"]["congress"] = f"failed — {exc}"
@@ -150,6 +152,7 @@ def refresh_status() -> dict[str, Any]:
 
 
 # ── request / response models ────────────────────────────────────────────────
+
 
 class ThesisIn(BaseModel):
     tickers: list[str]
@@ -286,6 +289,7 @@ def _dissent_out(d: th.Dissent) -> dict[str, Any]:
 
 
 # ── routes ───────────────────────────────────────────────────────────────────
+
 
 @app.get("/api")
 def root() -> dict[str, str]:
@@ -502,9 +506,7 @@ def context(ticker: str) -> dict[str, Any]:
         result["market_error"] = str(exc)
 
     try:
-        trades = list_trades(
-            _db(), ticker=ticker, since=recent_window(365), limit=10
-        )
+        trades = list_trades(_db(), ticker=ticker, since=recent_window(365), limit=10)
         result["senate_trades"] = [
             {
                 "senator": t.senator,
@@ -560,12 +562,10 @@ def get_congress_stats(days: int = 365) -> dict[str, Any]:
 def get_congress(
     ticker: str | None = None, days: int = 120, limit: int = 100
 ) -> dict[str, Any]:
-    """Recent Senate trades from the local mirror (populated by `cortex congress-sync`)."""
+    """Recent Senate trades from the local mirror (via `cortex congress-sync`)."""
     from cortex.sources.congress import list_trades, recent_window
 
-    trades = list_trades(
-        _db(), ticker=ticker, since=recent_window(days), limit=limit
-    )
+    trades = list_trades(_db(), ticker=ticker, since=recent_window(days), limit=limit)
     return {
         "banner": _BANNER,
         "ticker": ticker.upper() if ticker else None,
@@ -598,9 +598,7 @@ def get_funds(
     from cortex.sources.funds import list_fund_moves
 
     action_tuple = tuple(a.strip().upper() for a in actions.split(",") if a.strip())
-    moves = list_fund_moves(
-        _db(), ticker=ticker, actions=action_tuple, limit=limit
-    )
+    moves = list_fund_moves(_db(), ticker=ticker, actions=action_tuple, limit=limit)
     return {
         "banner": _BANNER,
         "ticker": ticker.upper() if ticker else None,
@@ -652,9 +650,7 @@ def get_volatility_screen() -> dict[str, Any]:
 def get_candidate(ticker: str) -> dict[str, Any]:
     """Return the CORTEX factor breakdown for a single ticker, if discovered."""
     tk = ticker.upper()
-    match = next(
-        (c for c in discovery.list_candidates(_db()) if c.ticker == tk), None
-    )
+    match = next((c for c in discovery.list_candidates(_db()) if c.ticker == tk), None)
     return {
         "banner": _BANNER,
         "ticker": tk,
@@ -732,8 +728,7 @@ def research_ticker(ticker: str, k: int = 2) -> dict[str, Any]:
             error = str(exc)
             chunks = []
         by_factor[factor] = [
-            {"wikilink": c.wikilink, "tier": c.tier, "text": c.text}
-            for c in chunks
+            {"wikilink": c.wikilink, "tier": c.tier, "text": c.text} for c in chunks
         ]
     return {
         "banner": _BANNER,
@@ -745,7 +740,7 @@ def research_ticker(ticker: str, k: int = 2) -> dict[str, Any]:
 
 @app.post("/context/{ticker}/reason")
 def generate_reasoning(ticker: str) -> dict[str, Any]:
-    """Shell to the local claude CLI to generate AI reasoning for a stock's key metrics."""
+    """Shell to the local claude CLI for AI reasoning on a stock's key metrics."""
     import json
     import shutil
     import subprocess
@@ -853,7 +848,8 @@ Return ONLY a JSON object with exactly these keys. Each value is 1-2 sentences m
     if result.returncode != 0:
         stderr = result.stderr.strip()
         raise HTTPException(
-            status_code=502, detail=f"claude CLI failed: {stderr or result.stdout[:200]}"
+            status_code=502,
+            detail=f"claude CLI failed: {stderr or result.stdout[:200]}",
         )
 
     # Parse the outer JSON envelope from claude --output-format json
@@ -885,6 +881,7 @@ Return ONLY a JSON object with exactly these keys. Each value is 1-2 sentences m
 def _maybe_mirror() -> None:
     try:
         from cortex.mirror import generate
+
         settings = load_settings()
         generate(settings.vault_dir, db_path=settings.duckdb_path)
     except Exception:

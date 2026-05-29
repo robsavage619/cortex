@@ -142,6 +142,7 @@ def sync_universe_fundamentals(
 
 # ── persistence ──────────────────────────────────────────────────────────────
 
+
 def store_fundamentals(points: list[FundamentalPoint], db_path: Path) -> int:
     from cortex.storage.db import connect
 

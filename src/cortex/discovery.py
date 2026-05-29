@@ -11,6 +11,7 @@ log = logging.getLogger(__name__)
 
 # ── Domain model ──────────────────────────────────────────────────────────────
 
+
 @dataclass
 class Candidate:
     ticker: str
@@ -33,6 +34,7 @@ class Candidate:
 
 # ── Math helpers ──────────────────────────────────────────────────────────────
 
+
 def _zscore_series(values: dict[str, float | None]) -> dict[str, float | None]:
     """Cross-sectional z-score.  Returns None for tickers that had None input."""
     valid = {k: v for k, v in values.items() if v is not None}
@@ -41,7 +43,7 @@ def _zscore_series(values: dict[str, float | None]) -> dict[str, float | None]:
     nums = list(valid.values())
     mean = sum(nums) / len(nums)
     variance = sum((x - mean) ** 2 for x in nums) / len(nums)
-    std = variance ** 0.5
+    std = variance**0.5
     if std == 0:
         return {k: (0.0 if k in valid else None) for k in values}
     out: dict[str, float | None] = {}
@@ -55,6 +57,7 @@ def _zscore_series(values: dict[str, float | None]) -> dict[str, float | None]:
 
 # ── Price-based factor computation ────────────────────────────────────────────
 
+
 def _compute_price_factors(
     tickers: list[str],
 ) -> dict[str, dict[str, Any]]:
@@ -67,7 +70,7 @@ def _compute_price_factors(
     import yfinance as yf
 
     log.info("Downloading price data for %d tickers (13mo)…", len(tickers))
-    raw = yf.download(
+    raw: Any = yf.download(
         tickers,
         period="13mo",
         auto_adjust=True,
@@ -116,9 +119,7 @@ def _compute_price_factors(
         if len(series) >= 30:
             log_rets = np.log(series / series.shift(1)).dropna()
             recent = log_rets.iloc[-252:]
-            vol_252d = (
-                float(recent.std() * np.sqrt(252)) if len(recent) >= 20 else None
-            )
+            vol_252d = float(recent.std() * np.sqrt(252)) if len(recent) >= 20 else None
         else:
             vol_252d = None
 
@@ -158,6 +159,7 @@ def _compute_price_factors(
 
 # ── Fundamental factor fetch ──────────────────────────────────────────────────
 
+
 def _fetch_fundamentals(tickers: list[str]) -> dict[str, dict[str, Any]]:
     """Fetch earnings yield and ROE for the given ticker list via yf.Ticker.info."""
     import yfinance as yf
@@ -183,6 +185,7 @@ def _fetch_fundamentals(tickers: list[str]) -> dict[str, dict[str, Any]]:
 
 
 # ── Storage ───────────────────────────────────────────────────────────────────
+
 
 def _store_candidates(candidates: list[Candidate], db_path: Path) -> None:
     """Atomically replace the candidates table contents."""
@@ -269,6 +272,7 @@ def list_candidates(db_path: Path) -> list[Candidate]:
 
 # ── Main pipeline ─────────────────────────────────────────────────────────────
 
+
 def run_discovery(
     db_path: Path,
     top_n: int = 30,
@@ -301,8 +305,7 @@ def run_discovery(
     # ── Stage 2: trend gate + price composite pre-filter ─────────────────────
     # Exclude stocks below 200d SMA (Faber regime filter — hard gate)
     trend_ok = [
-        t for t in tickers
-        if price_data.get(t, {}).get("above_200d_sma") is not False
+        t for t in tickers if price_data.get(t, {}).get("above_200d_sma") is not False
     ]
     log.info("After trend gate: %d tickers remain", len(trend_ok))
 
