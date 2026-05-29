@@ -46,6 +46,11 @@ app.add_middleware(
 
 _BANNER = "Decision tool — not financial advice."
 
+# In-memory cache for the expensive CAR daily series (yfinance download).
+# {signal: (unix_ts, serialised_list)}
+_car_series_cache: dict[str, tuple[float, list[dict[str, Any]]]] = {}
+_CAR_CACHE_TTL = 86400.0  # 24 hours
+
 
 def _db() -> Path:
     return load_settings().duckdb_path
@@ -547,9 +552,7 @@ def context(ticker: str) -> dict[str, Any]:
         result["activist_stakes"] = [
             {
                 "filer": s.filer,
-                "filing_date": (
-                    s.filing_date.isoformat() if s.filing_date else None
-                ),
+                "filing_date": (s.filing_date.isoformat() if s.filing_date else None),
             }
             for s in stakes
         ]
@@ -913,6 +916,34 @@ Return ONLY a JSON object with exactly these keys. Each value is 1-2 sentences m
     return {"banner": _BANNER, "ticker": tk, "reasoning": reasoning}
 
 
+@app.get("/event-study/{signal}/car-series")
+def car_series_endpoint(signal: str) -> dict[str, Any]:
+    """Day-by-day mean CAR (days 0–120) for a filing-gated signal. Cached 24 h.
+
+    First call downloads S&P 500 prices via yfinance (~30–60 s). Subsequent
+    calls within the TTL window return immediately from the in-memory cache.
+    """
+    import time
+
+    from cortex.backtest import run_event_study_daily
+
+    if signal not in ("insider", "activism", "congress"):
+        raise HTTPException(status_code=400, detail=f"Unknown signal {signal!r}")
+
+    now = time.time()
+    if signal in _car_series_cache:
+        ts, cached = _car_series_cache[signal]
+        if now - ts < _CAR_CACHE_TTL:
+            return {"banner": _BANNER, "signal": signal, "series": cached}
+
+    points = run_event_study_daily(_db(), signal=signal)
+    data = [
+        {"day": p.day, "mean_car": p.mean_car, "se": p.se, "n": p.n} for p in points
+    ]
+    _car_series_cache[signal] = (now, data)
+    return {"banner": _BANNER, "signal": signal, "series": data}
+
+
 def _maybe_mirror() -> None:
     try:
         from cortex.mirror import generate
@@ -928,11 +959,10 @@ def _maybe_mirror() -> None:
 if _WEB_DIST.exists():
     app.mount("/assets", StaticFiles(directory=_WEB_DIST / "assets"), name="assets")
 
-    @app.get("/favicon.svg")
-    def favicon() -> FileResponse:
-        return FileResponse(_WEB_DIST / "favicon.svg")
-
     @app.get("/{full_path:path}")
-    def spa_fallback(full_path: str) -> FileResponse:  # noqa: ARG001
-        """Serve index.html for all unmatched paths (React SPA routing)."""
+    def spa_fallback(full_path: str) -> FileResponse:
+        """Serve static files from dist root when they exist, otherwise index.html."""
+        candidate = _WEB_DIST / full_path
+        if candidate.is_file():
+            return FileResponse(candidate)
         return FileResponse(_WEB_DIST / "index.html")
