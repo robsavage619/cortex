@@ -106,10 +106,18 @@ def _cmd_discover(args: argparse.Namespace) -> None:
 
     settings = load_settings()
     log.info("Starting CORTEX discovery pipeline…")
+    from cortex.thesis import list_theses
+
+    active = list_theses(status="open", db_path=settings.duckdb_path) + list_theses(
+        status="pending", db_path=settings.duckdb_path
+    )
+    force = list({t for thesis in active for t in thesis.tickers})
+
     candidates = run_discovery(
         settings.duckdb_path,
         top_n=args.top_n,
         prefilter_n=args.prefilter_n,
+        force_include=force,
     )
     print(f"Discovered {len(candidates)} candidates")
     for c in candidates:

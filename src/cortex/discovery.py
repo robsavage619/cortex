@@ -277,8 +277,14 @@ def run_discovery(
     db_path: Path,
     top_n: int = 30,
     prefilter_n: int = 150,
+    force_include: list[str] | None = None,
 ) -> list[Candidate]:
     """Run the 6-factor CORTEX discovery pipeline.
+
+    Args:
+        force_include: Tickers to always score and persist regardless of rank
+            (e.g. active thesis tickers). They are scored truthfully — the
+            composite and rank reflect their true cross-sectional position.
 
     Pipeline:
         1. Load S&P 500 universe (~500 tickers)
@@ -286,7 +292,8 @@ def run_discovery(
         3. Compute price-based factors: momentum 12-1, vol 252d, Sharpe 12m,
            trend regime (200d SMA gate)
         4. Cross-sectional z-score price factors; compute price composite
-        5. Pre-filter to top `prefilter_n` by price composite
+        5. Pre-filter to top `prefilter_n` by price composite (force_include
+           tickers are always added to the shortlist)
         6. Fetch fundamentals (earnings yield, ROE) for the shortlist only
         7. Compute full 6-factor composite; rank; keep top `top_n`
         8. Persist results to DB (DELETE + re-INSERT)
@@ -327,8 +334,16 @@ def run_discovery(
         return sum(valid) / len(valid) if valid else -999.0
 
     price_ranked = sorted(trend_ok, key=_price_composite, reverse=True)
-    shortlist = price_ranked[:prefilter_n]
-    log.info("Shortlist: top %d by price composite", len(shortlist))
+    shortlist_set = set(price_ranked[:prefilter_n])
+    # Always include force_include tickers that passed the trend gate
+    if force_include:
+        for t in force_include:
+            if t in price_data and t not in shortlist_set:
+                shortlist_set.add(t)
+                log.info("Force-including %s in shortlist", t)
+    shortlist = sorted(shortlist_set, key=_price_composite, reverse=True)
+    n_forced = len(shortlist_set) - min(prefilter_n, len(price_ranked))
+    log.info("Shortlist: %d tickers (%d forced)", len(shortlist), n_forced)
 
     # ── Stage 3: fundamentals ─────────────────────────────────────────────────
     fund_data = _fetch_fundamentals(shortlist)
@@ -357,9 +372,14 @@ def run_discovery(
 
     ranked = sorted(shortlist, key=_composite, reverse=True)
     top = ranked[:top_n]
+    # Always include force_include tickers even if outside top_n
+    forced_extra = [
+        t for t in (force_include or []) if t in price_data and t not in top
+    ]
+    to_persist = top + forced_extra
 
     candidates: list[Candidate] = []
-    for rank, ticker in enumerate(top, start=1):
+    for rank, ticker in enumerate(to_persist, start=1):
         pd_ = price_data[ticker]
         z_lv = z_vol2[ticker]
         comp = _composite(ticker)

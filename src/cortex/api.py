@@ -101,7 +101,13 @@ def _run_refresh() -> None:
 
         try:
             _refresh_state["steps"]["discover"] = "running"
-            candidates = run_discovery(db, top_n=30)
+            from cortex.thesis import list_theses
+
+            active_theses = list_theses(status="open", db_path=db) + list_theses(
+                status="pending", db_path=db
+            )
+            force = list({t for thesis in active_theses for t in thesis.tickers})
+            candidates = run_discovery(db, top_n=30, force_include=force)
             _refresh_state["steps"]["discover"] = f"done — {len(candidates)} candidates"
         except Exception as exc:  # noqa: BLE001 - record visibly
             log.warning("refresh: discovery failed: %s", exc)
