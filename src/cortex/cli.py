@@ -240,12 +240,14 @@ def _cmd_congress_oos(args: argparse.Namespace) -> None:
     print(f"  IN-SAMPLE  {rep.insample_start} → {rep.insample_end}")
     print(
         f"    IC={rep.insample_mean_ic:+.4f}  t={rep.insample_ic_tstat:.2f}"
+        f"  NW t={rep.insample_ic_tstat_nw:.2f}"
         f"  coverage={rep.insample_coverage:.0%}  n={rep.insample_n_months} months"
     )
     print()
     print(f"  OUT-OF-SAMPLE  {rep.oos_start} → {rep.oos_end}")
     print(
         f"    IC={rep.oos_mean_ic:+.4f}  t={rep.oos_ic_tstat:.2f}"
+        f"  NW t={rep.oos_ic_tstat_nw:.2f}"
         f"  coverage={rep.oos_coverage:.0%}  n={rep.oos_n_months} months"
     )
     print()
@@ -286,29 +288,55 @@ def _cmd_backtest(args: argparse.Namespace) -> None:
     print("  " + "-" * 76)
     for s in rep.variants:
         print(
-            f"  {s.label:30} IC={s.mean_ic:+.4f} (t={s.ic_tstat:.2f})  "
+            f"  {s.label:30} IC={s.mean_ic:+.4f} "
+            f"(t={s.ic_tstat:.2f}, NW={s.ic_tstat_nw:.2f})  "
             f"CAGR={s.cagr:+.1%}  Sharpe={s.sharpe:.2f}  "
             f"maxDD={s.max_drawdown:.1%}  hit={s.hit_rate:.0%}  n={s.n_months}"
         )
     print()
     print("  PER-FACTOR ABLATION (standalone information coefficient):")
-    print(f"   {'factor':10} {'mean IC':>9}  {'t-stat':>7}  {'coverage':>8}")
+    print(f"   {'factor':10} {'mean IC':>9}  {'t':>6}  {'NW t':>6}  {'coverage':>8}")
     for f in rep.factor_ics:
-        flag = "  <-- real" if abs(f.ic_tstat) >= 3.0 else ""
+        flag = "  <-- real" if abs(f.ic_tstat_nw) >= 3.0 else ""
         print(
-            f"   {f.factor:10} {f.mean_ic:>+9.4f}  {f.ic_tstat:>7.2f}  "
-            f"{f.coverage:>7.0%}{flag}"
+            f"   {f.factor:10} {f.mean_ic:>+9.4f}  {f.ic_tstat:>6.2f}  "
+            f"{f.ic_tstat_nw:>6.2f}  {f.coverage:>7.0%}{flag}"
         )
     print()
+    if rep.long_short is not None:
+        ls = rep.long_short
+        print("  LONG-SHORT SPREAD (CORTEX D10 − D1, beta-stripped factor return):")
+        print(
+            f"    mean monthly={ls.mean_monthly:+.4%}  NW t={ls.tstat_nw:.2f}  "
+            f"CAGR={ls.cagr:+.1%}  Sharpe={ls.sharpe:.2f}  n={ls.n_months}"
+        )
+        print()
+    if rep.factor_corr is not None:
+        fc = rep.factor_corr
+        print("  FACTOR IC CORRELATION (do flow factors add beyond price?):")
+        header = "         " + "".join(f"{k[:5]:>7}" for k in fc.factors)
+        print(header)
+        for name, row in zip(fc.factors, fc.matrix, strict=True):
+            cells = "".join(
+                f"{v:>+7.2f}" if v is not None else f"{'—':>7}" for v in row
+            )
+            print(f"   {name:6}{cells}")
+        print()
     cortex = rep.variants[0]
     print("  CORTEX decile CAGR (D1 worst → D10 best), monotonicity check:")
     deciles = "  ".join(f"D{d + 1}:{c:+.0%}" for d, c in enumerate(cortex.decile_cagr))
     print("   " + deciles)
     print()
-    print("  READ: a factor/composite is 'real' only at IC t-stat ≥ 3.0 (multiple-")
-    print("  testing haircut). Deciles should rise monotonically. CAVEATS: universe =")
-    print("  CURRENT S&P500 (survivorship-biased → results upward-biased). Net 10bps/")
-    print("  side, rf=0. Value/quality now included via point-in-time EDGAR filings.")
+    print(
+        "  READ: a factor/composite is 'real' only at NW (Newey-West) IC t-stat ≥ 3.0"
+    )
+    print("  (autocorrelation-robust, multiple-testing haircut). The long-short spread")
+    print(
+        "  should be positive and deciles rise monotonically; a flow factor earns its"
+    )
+    print("  place only if its IC is weakly correlated with momentum/trend. CAVEATS:")
+    print("  universe = CURRENT S&P500 (survivorship-biased → results upward-biased).")
+    print("  Net 10bps/side, rf=0. Value/quality via point-in-time EDGAR filings.")
     print("=" * 80)
 
 

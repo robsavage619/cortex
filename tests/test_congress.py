@@ -66,21 +66,33 @@ def test_parse_ptr_html_extracts_trades_and_skips_no_ticker():
 
 def test_dedupe_id_is_stable_and_distinct():
     a = CongressTrade(
-        senator="X", ticker="NVDA", transaction_type="Purchase",
-        amount="$1,001 - $15,000", transaction_date=dt.date(2026, 5, 7),
-        disclosure_date=dt.date(2026, 5, 22), asset_description="NVIDIA",
+        senator="X",
+        ticker="NVDA",
+        transaction_type="Purchase",
+        amount="$1,001 - $15,000",
+        transaction_date=dt.date(2026, 5, 7),
+        disclosure_date=dt.date(2026, 5, 22),
+        asset_description="NVIDIA",
         report_url="https://efdsearch.senate.gov/r/1/",
     )
     same = CongressTrade(
-        senator="X (different display)", ticker="NVDA", transaction_type="Purchase",
-        amount="$1,001 - $15,000", transaction_date=dt.date(2026, 5, 7),
-        disclosure_date=None, asset_description="NVIDIA",
+        senator="X (different display)",
+        ticker="NVDA",
+        transaction_type="Purchase",
+        amount="$1,001 - $15,000",
+        transaction_date=dt.date(2026, 5, 7),
+        disclosure_date=None,
+        asset_description="NVIDIA",
         report_url="https://efdsearch.senate.gov/r/1/",
     )
     other = CongressTrade(
-        senator="X", ticker="AAPL", transaction_type="Purchase",
-        amount="$1,001 - $15,000", transaction_date=dt.date(2026, 5, 7),
-        disclosure_date=dt.date(2026, 5, 22), asset_description="Apple",
+        senator="X",
+        ticker="AAPL",
+        transaction_type="Purchase",
+        amount="$1,001 - $15,000",
+        transaction_date=dt.date(2026, 5, 7),
+        disclosure_date=dt.date(2026, 5, 22),
+        asset_description="Apple",
         report_url="https://efdsearch.senate.gov/r/1/",
     )
     # Same trade facts → same id (ignores display name / disclosure date).
@@ -102,12 +114,36 @@ def test_clean_filer_strips_role_suffix():
 
 def test_filter_trades_by_ticker_and_window():
     trades = [
-        CongressTrade("A", "NVDA", "Purchase", "$1k", dt.date(2026, 5, 1),
-                      dt.date(2026, 5, 2), "NVIDIA", ""),
-        CongressTrade("B", "AAPL", "Sale", "$1k", dt.date(2026, 5, 1),
-                      dt.date(2026, 5, 2), "Apple", ""),
-        CongressTrade("C", "NVDA", "Purchase", "$1k", dt.date(2024, 1, 1),
-                      dt.date(2024, 1, 2), "NVIDIA", ""),
+        CongressTrade(
+            "A",
+            "NVDA",
+            "Purchase",
+            "$1k",
+            dt.date(2026, 5, 1),
+            dt.date(2026, 5, 2),
+            "NVIDIA",
+            "",
+        ),
+        CongressTrade(
+            "B",
+            "AAPL",
+            "Sale",
+            "$1k",
+            dt.date(2026, 5, 1),
+            dt.date(2026, 5, 2),
+            "Apple",
+            "",
+        ),
+        CongressTrade(
+            "C",
+            "NVDA",
+            "Purchase",
+            "$1k",
+            dt.date(2024, 1, 1),
+            dt.date(2024, 1, 2),
+            "NVIDIA",
+            "",
+        ),
     ]
     out = filter_trades(trades, ["NVDA"], since=dt.date(2026, 1, 1))
     assert [t.senator for t in out] == ["A"]  # AAPL filtered out, 2024 too old

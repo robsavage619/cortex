@@ -57,8 +57,16 @@ def test_theses_table_columns(tmp_path):
             ).fetchall()
         }
     required = {
-        "id", "tickers", "author", "opened", "conviction", "claim",
-        "falsifier", "review_date", "status", "created_at",
+        "id",
+        "tickers",
+        "author",
+        "opened",
+        "conviction",
+        "claim",
+        "falsifier",
+        "review_date",
+        "status",
+        "created_at",
     }
     assert required <= cols
 

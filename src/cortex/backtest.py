@@ -276,7 +276,8 @@ class StrategyResult:
     label: str
     n_months: int
     mean_ic: float
-    ic_tstat: float
+    ic_tstat: float  # naive IID t-stat (mean·√n / std)
+    ic_tstat_nw: float  # Newey-West HAC t-stat (autocorrelation-robust)
     cagr: float
     sharpe: float
     max_drawdown: float
@@ -289,8 +290,37 @@ class StrategyResult:
 class FactorIC:
     factor: str
     mean_ic: float
-    ic_tstat: float
+    ic_tstat: float  # naive IID t-stat
+    ic_tstat_nw: float  # Newey-West HAC t-stat
     coverage: float  # avg fraction of universe with the factor present
+
+
+@dataclass
+class LongShortResult:
+    """Top-decile-minus-bottom-decile spread of the CORTEX composite.
+
+    The long-short return strips market beta from the long-only top decile,
+    isolating the factor's directional content. A real factor produces a
+    positive spread whose mean clears the HAC t-stat bar.
+    """
+
+    mean_monthly: float
+    tstat_nw: float
+    cagr: float
+    sharpe: float
+    n_months: int
+
+
+@dataclass
+class FactorCorrelation:
+    """Pairwise correlation of the per-factor monthly IC time series.
+
+    Answers whether the flow factors (congress/insider/13F) carry information
+    beyond the price factors, or merely re-express momentum.
+    """
+
+    factors: list[str]
+    matrix: list[list[float | None]]  # None where overlap < 6 months
 
 
 @dataclass
@@ -302,6 +332,8 @@ class BacktestReport:
     benchmark_sharpe: float
     variants: list[StrategyResult] = field(default_factory=list)
     factor_ics: list[FactorIC] = field(default_factory=list)
+    long_short: LongShortResult | None = None
+    factor_corr: FactorCorrelation | None = None
 
 
 def _annualize(monthly: list[float]) -> tuple[float, float, float]:
@@ -317,6 +349,67 @@ def _annualize(monthly: list[float]) -> tuple[float, float, float]:
     peak = np.maximum.accumulate(curve)
     max_dd = float((curve / peak - 1).min())
     return float(cagr), float(sharpe), max_dd
+
+
+def _nw_tstat(values: list[float], lag: int | None = None) -> float:
+    """Newey-West HAC t-stat for the mean of a serially-correlated series.
+
+    Monthly cross-sectional ICs from slow-decaying signals are autocorrelated,
+    so the naive IID t-stat (mean·√n / std) overstates significance. This
+    applies a Bartlett-kernel HAC correction; the lag defaults to the
+    Newey-West (1994) plug-in rule ⌊4·(n/100)^(2/9)⌋.
+    """
+    a = np.asarray([v for v in values if not math.isnan(v)], dtype=float)
+    n = a.size
+    if n < 3:
+        return 0.0
+    mean = float(a.mean())
+    dev = a - mean
+    if lag is None:
+        lag = int(math.floor(4 * (n / 100.0) ** (2.0 / 9.0)))
+    lag = max(1, min(lag, n - 1))
+    lrv = float((dev * dev).mean())  # gamma_0
+    for k in range(1, lag + 1):
+        weight = 1.0 - k / (lag + 1.0)  # Bartlett kernel
+        lrv += 2.0 * weight * float((dev[k:] * dev[:-k]).mean())
+    if lrv <= 0:
+        return 0.0
+    se = math.sqrt(lrv / n)
+    return float(mean / se) if se > 0 else 0.0
+
+
+def _series_stats(values: list[float]) -> tuple[float, float, float]:
+    """Return (mean, naive IID t-stat, Newey-West HAC t-stat) for a series."""
+    a = np.asarray([v for v in values if not math.isnan(v)], dtype=float)
+    if a.size == 0:
+        return 0.0, 0.0, 0.0
+    mean = float(a.mean())
+    naive_t = float(mean / a.std() * math.sqrt(a.size)) if a.std() > 0 else 0.0
+    return mean, naive_t, _nw_tstat(list(a))
+
+
+def _factor_corr(
+    series: dict[str, list[float]], keys: tuple[str, ...]
+) -> FactorCorrelation:
+    """Pairwise correlation of aligned per-factor monthly IC series.
+
+    Series carry NaN for months a factor was unscored; each pair is correlated
+    over its complete-overlap months only (None if fewer than 6).
+    """
+    arrs = {k: np.asarray(series[k], dtype=float) for k in keys}
+    matrix: list[list[float | None]] = []
+    for ki in keys:
+        ai = arrs[ki]
+        row: list[float | None] = []
+        for kj in keys:
+            aj = arrs[kj]
+            mask = ~np.isnan(ai) & ~np.isnan(aj)
+            if mask.sum() < 6 or ai[mask].std() == 0 or aj[mask].std() == 0:
+                row.append(None)
+            else:
+                row.append(float(np.corrcoef(ai[mask], aj[mask])[0, 1]))
+        matrix.append(row)
+    return FactorCorrelation(list(keys), matrix)
 
 
 def _top_decile_return(
@@ -441,6 +534,8 @@ def run_backtest(
     prev: dict[str, set[int]] = {k: set() for k in variant_keys}
     var_ic: dict[str, list[float]] = {k: [] for k in variant_keys}
     fac_ic: dict[str, list[float]] = {k: [] for k in factor_keys}
+    # Aligned per-month IC (NaN when unscored) for the factor-correlation matrix.
+    fac_ic_series: dict[str, list[float]] = {k: [] for k in factor_keys}
     fac_cov: dict[str, list[float]] = {k: [] for k in factor_keys}
     bench_rets: list[float] = []
     decile_acc: list[list[float]] = [[] for _ in range(10)]
@@ -539,6 +634,7 @@ def run_backtest(
             ic = _spearman_ic(z, fwd)
             if ic is not None:
                 fac_ic[fk].append(ic)
+            fac_ic_series[fk].append(ic if ic is not None else math.nan)
             fac_cov[fk].append(float(np.sum(~np.isnan(z)) / max(n_elig, 1)))
 
         # Per-variant IC + top-decile returns.
@@ -560,13 +656,6 @@ def run_backtest(
                 if len(ch):
                     decile_acc[d].append(float(np.mean([fwd[m] for m in ch])))
 
-    def _ic_stats(ics: list[float]) -> tuple[float, float]:
-        if not ics:
-            return 0.0, 0.0
-        a = np.array(ics)
-        t = float(a.mean() / a.std() * math.sqrt(len(a))) if a.std() > 0 else 0.0
-        return float(a.mean()), t
-
     def _hit(strat: list[float]) -> float:
         wins = [1.0 if s > b else 0.0 for s, b in zip(strat, bench_rets, strict=False)]
         return float(np.mean(wins)) if wins else 0.0
@@ -585,13 +674,14 @@ def run_backtest(
     variants: list[StrategyResult] = []
     for vk in variant_keys:
         cagr, sharpe, dd = _annualize(rets[vk])
-        ic_m, ic_t = _ic_stats(var_ic[vk])
+        ic_m, ic_t, ic_t_nw = _series_stats(var_ic[vk])
         variants.append(
             StrategyResult(
                 labels[vk],
                 len(rets[vk]),
                 ic_m,
                 ic_t,
+                ic_t_nw,
                 cagr,
                 sharpe,
                 dd,
@@ -603,9 +693,28 @@ def run_backtest(
 
     factor_ics: list[FactorIC] = []
     for fk in factor_keys:
-        ic_m, ic_t = _ic_stats(fac_ic[fk])
+        ic_m, ic_t, ic_t_nw = _series_stats(fac_ic[fk])
         cov = float(np.mean(fac_cov[fk])) if fac_cov[fk] else 0.0
-        factor_ics.append(FactorIC(fk, ic_m, ic_t, cov))
+        factor_ics.append(FactorIC(fk, ic_m, ic_t, ic_t_nw, cov))
+
+    # Long-short spread: CORTEX top decile (D10) minus bottom decile (D1),
+    # aligned month-by-month (both deciles are appended under the same gate).
+    long_short: LongShortResult | None = None
+    if decile_acc[0] and decile_acc[9]:
+        ls_monthly = [
+            top - bot for top, bot in zip(decile_acc[9], decile_acc[0], strict=True)
+        ]
+        ls_mean, _, ls_t_nw = _series_stats(ls_monthly)
+        ls_cagr, ls_sharpe, _ = _annualize(ls_monthly)
+        long_short = LongShortResult(
+            mean_monthly=ls_mean,
+            tstat_nw=ls_t_nw,
+            cagr=ls_cagr,
+            sharpe=ls_sharpe,
+            n_months=len(ls_monthly),
+        )
+
+    factor_corr = _factor_corr(fac_ic_series, factor_keys)
 
     return BacktestReport(
         start=daily_idx[rebal[0]].date(),
@@ -615,6 +724,8 @@ def run_backtest(
         benchmark_sharpe=b_sharpe,
         variants=variants,
         factor_ics=factor_ics,
+        long_short=long_short,
+        factor_corr=factor_corr,
     )
 
 
@@ -638,11 +749,13 @@ class CongressOOSReport:
 
     insample_mean_ic: float
     insample_ic_tstat: float
+    insample_ic_tstat_nw: float
     insample_coverage: float
     insample_n_months: int
 
     oos_mean_ic: float
     oos_ic_tstat: float
+    oos_ic_tstat_nw: float
     oos_coverage: float
     oos_n_months: int
 
@@ -756,15 +869,8 @@ def run_congress_oos(
             if not math.isnan(net):
                 oos_port_rets.append(net)
 
-    def _ic_stats(ics: list[float]) -> tuple[float, float]:
-        if not ics:
-            return 0.0, 0.0
-        a = np.array(ics)
-        t = float(a.mean() / a.std() * math.sqrt(len(a))) if a.std() > 0 else 0.0
-        return float(a.mean()), t
-
-    is_mean_ic, is_tstat = _ic_stats(is_ics)
-    oos_mean_ic, oos_tstat = _ic_stats(oos_ics)
+    is_mean_ic, is_tstat, is_tstat_nw = _series_stats(is_ics)
+    oos_mean_ic, oos_tstat, oos_tstat_nw = _series_stats(oos_ics)
     is_cov_avg = float(np.mean(is_cov)) if is_cov else 0.0
     oos_cov_avg = float(np.mean(oos_cov)) if oos_cov else 0.0
 
@@ -792,10 +898,12 @@ def run_congress_oos(
         oos_end=daily_idx[rebal[-1]].date(),
         insample_mean_ic=is_mean_ic,
         insample_ic_tstat=is_tstat,
+        insample_ic_tstat_nw=is_tstat_nw,
         insample_coverage=is_cov_avg,
         insample_n_months=len(is_ics),
         oos_mean_ic=oos_mean_ic,
         oos_ic_tstat=oos_tstat,
+        oos_ic_tstat_nw=oos_tstat_nw,
         oos_coverage=oos_cov_avg,
         oos_n_months=len(oos_ics),
         oos_portfolio_cagr=port_cagr,

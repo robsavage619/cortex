@@ -154,6 +154,18 @@ The differentiator. `cortex backtest` and `cortex congress-oos` evaluate factors
 multiple-testing-corrected significance gate. A factor is only called "real" when its
 information-coefficient t-statistic clears the bar — anything below is treated as noise.
 
+Every reported t-statistic is **Newey–West HAC-adjusted** (Bartlett kernel), so the
+significance bar is robust to autocorrelation in the monthly IC series rather than
+assuming IID months. Alongside the per-factor ablation the harness reports:
+
+- **The long–short spread** — top-decile-minus-bottom-decile return of the composite,
+  which strips market beta to isolate the factor's directional content (a long-only
+  decile mostly inherits the market's drift).
+- **A factor-IC correlation matrix** — answering whether the alt-data flow factors
+  (congressional / insider / 13F) carry information *beyond* price momentum, or merely
+  re-express it. (They turn out to be weakly correlated with the price factors — the
+  flow thesis is additive, not redundant.)
+
 The harness explicitly reports its own caveats (survivorship bias from a
 current-membership universe, sparse coverage on alt-data factors, transaction-cost
 assumptions) **in the output itself**. As of the latest run no candidate factor clears

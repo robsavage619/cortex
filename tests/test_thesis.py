@@ -43,6 +43,7 @@ def _make(db, **kwargs):
 
 # --- create / get ---
 
+
 def test_create_and_get_roundtrip(db):
     t = _make(db)
     fetched = get(t.id, db_path=db)
@@ -58,6 +59,7 @@ def test_get_missing_raises(db):
 
 
 # --- validation ---
+
 
 def test_invalid_conviction(db):
     with pytest.raises(ThesisError, match="conviction"):
@@ -91,6 +93,7 @@ def test_invalid_status(db):
 
 # --- list ---
 
+
 def test_list_all(db):
     _make(db, tickers=["AAPL"])
     _make(db, tickers=["MSFT"], author="ari")
@@ -114,6 +117,7 @@ def test_list_filter_status(db):
 
 # --- update ---
 
+
 def test_update_status(db):
     t = _make(db)
     updated = update(t.id, status="confirmed", db_path=db)
@@ -133,6 +137,7 @@ def test_update_entry_price(db):
 
 
 # --- record_review ---
+
 
 def test_record_review(db):
     t = _make(db)
@@ -157,6 +162,7 @@ def test_record_review_idempotent(db):
 
 
 # --- pre-commitment + cooling-off ---
+
 
 def test_precommitment_fields_persist(db):
     t = _make(
@@ -194,6 +200,7 @@ def test_activate_rejects_non_pending(db):
 
 # --- dual-grade review ---
 
+
 def test_record_review_with_decision_quality(db):
     t = _make(db)
     record_review(t.id, outcome="wrong", decision_quality="good", db_path=db)
@@ -212,6 +219,7 @@ def test_record_review_invalid_decision_quality(db):
 
 
 # --- dissents ---
+
 
 def test_add_and_list_dissents(db):
     t = _make(db)

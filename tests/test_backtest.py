@@ -3,12 +3,16 @@ from __future__ import annotations
 import datetime as dt
 
 import numpy as np
+import pytest
 
 from cortex.backtest import (
     _amount_midpoint,
     _congress_sign,
+    _factor_corr,
     _Fundamental,
     _fundamental_asof,
+    _nw_tstat,
+    _series_stats,
     _spearman_ic,
     _zscore,
 )
@@ -64,3 +68,49 @@ def test_spearman_ic_perfect_and_inverse():
     inv = sig[::-1].copy()
     assert _spearman_ic(sig, same) == 1.0
     assert _spearman_ic(sig, inv) == -1.0
+
+
+def test_nw_tstat_shrinks_under_positive_autocorrelation():
+    """A persistent (autocorrelated) series should get a smaller HAC t-stat
+    than the naive IID t-stat, because effective sample size is lower."""
+    rng = np.random.default_rng(0)
+    n = 240
+    # AR(1) with positive phi around a positive mean.
+    phi, mean = 0.6, 0.02
+    x = np.zeros(n)
+    x[0] = mean
+    for t in range(1, n):
+        x[t] = mean + phi * (x[t - 1] - mean) + rng.normal(0, 0.01)
+    series = list(x)
+    _, naive_t, nw_t = _series_stats(series)
+    assert nw_t < naive_t  # HAC correction penalizes the persistence
+    assert nw_t > 0  # still detects the positive mean
+
+
+def test_nw_tstat_matches_naive_for_white_noise():
+    """With no autocorrelation, HAC and naive t-stats should be close."""
+    rng = np.random.default_rng(1)
+    series = list(0.01 + rng.normal(0, 0.005, size=400))
+    _, naive_t, nw_t = _series_stats(series)
+    assert abs(nw_t - naive_t) / naive_t < 0.35
+
+
+def test_nw_tstat_degenerate_inputs():
+    assert _nw_tstat([]) == 0.0
+    assert _nw_tstat([0.1, 0.2]) == 0.0  # n < 3
+    assert _nw_tstat([0.05, 0.05, 0.05, 0.05]) == 0.0  # zero variance
+
+
+def test_factor_corr_recovers_correlation_and_gates_overlap():
+    base = [0.1, -0.2, 0.05, 0.3, -0.1, 0.2, 0.15]
+    series = {
+        "a": list(base),
+        "b": list(base),  # identical → corr +1
+        "c": [-v for v in base],  # negated → corr -1
+        "d": [float("nan")] * len(base),  # no overlap → None
+    }
+    fc = _factor_corr(series, ("a", "b", "c", "d"))
+    idx = {k: i for i, k in enumerate(fc.factors)}
+    assert fc.matrix[idx["a"]][idx["b"]] == pytest.approx(1.0)
+    assert fc.matrix[idx["a"]][idx["c"]] == pytest.approx(-1.0)
+    assert fc.matrix[idx["a"]][idx["d"]] is None
