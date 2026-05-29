@@ -353,3 +353,32 @@ export function useGenerateReasoning() {
     },
   })
 }
+
+async function copyToClipboard(text: string): Promise<void> {
+  if (navigator.clipboard) {
+    try {
+      await navigator.clipboard.writeText(text)
+      return
+    } catch {
+      // fall through to execCommand fallback
+    }
+  }
+  const el = document.createElement('textarea')
+  el.value = text
+  el.style.cssText = 'position:fixed;top:-9999px;left:-9999px;opacity:0'
+  document.body.appendChild(el)
+  el.focus()
+  el.select()
+  document.execCommand('copy')
+  document.body.removeChild(el)
+}
+
+export function useCopyPrompt() {
+  return useMutation({
+    mutationFn: async (ticker: string) => {
+      const { data } = await http.get<{ prompt: string }>(`/context/${ticker}/prompt`)
+      await copyToClipboard(data.prompt)
+      return data.prompt
+    },
+  })
+}

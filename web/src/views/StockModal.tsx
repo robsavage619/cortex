@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ArrowUpRight, Sparkles, TrendingDown, TrendingUp, X } from 'lucide-react'
+import { ArrowUpRight, ClipboardCopy, Sparkles, TrendingDown, TrendingUp, X } from 'lucide-react'
 
 import { AnalysisChart } from '@/components/charts/AnalysisChart'
 import { CARChart } from '@/components/charts/CARChart'
@@ -11,6 +11,7 @@ import {
   useCase,
   useCongress,
   useFunds,
+  useCopyPrompt,
   useGenerateReasoning,
   useHistory,
   useTickerContext,
@@ -1446,6 +1447,8 @@ export function StockModal({
   const [tab, setTab] = useState<Tab>('overview')
   const [reasoning, setReasoning] = useState<StockReasoning | null>(null)
   const generateReasoning = useGenerateReasoning()
+  const copyPrompt = useCopyPrompt()
+  const [promptCopied, setPromptCopied] = useState(false)
   const { data: ctx } = useTickerContext(lead)
   const { data: barsYear = [] } = useHistory(lead, '1y')
   const { data: candidate, isLoading: candLoading } = useCandidate(lead)
@@ -1574,7 +1577,31 @@ export function StockModal({
               <p className="font-sans text-[11px] text-muted max-w-2xl">{quickRead}</p>
             )}
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() =>
+                copyPrompt.mutate(lead, {
+                  onSuccess: () => {
+                    setPromptCopied(true)
+                    setTimeout(() => setPromptCopied(false), 2000)
+                  },
+                })
+              }
+              disabled={copyPrompt.isPending}
+              title="Copy research brief prompt for Claude"
+              className={cn(
+                'num flex items-center gap-1.5 border px-2.5 py-1 text-[10px] tracking-widest transition-colors',
+                promptCopied
+                  ? 'border-up/40 text-up'
+                  : copyPrompt.isError
+                    ? 'border-down/40 text-down hover:border-down/70'
+                    : 'border-border text-muted hover:border-cyan/40 hover:text-cyan',
+                copyPrompt.isPending && 'cursor-wait opacity-60',
+              )}
+            >
+              <ClipboardCopy className="h-3 w-3" />
+              {copyPrompt.isPending ? 'BUILDING…' : promptCopied ? 'COPIED!' : copyPrompt.isError ? 'FAILED' : 'COPY PROMPT'}
+            </button>
             <div className="flex flex-col items-end gap-0.5">
               <button
                 onClick={() =>

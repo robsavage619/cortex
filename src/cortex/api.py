@@ -1040,6 +1040,191 @@ def generate_reasoning(ticker: str) -> dict[str, Any]:
     return {"banner": _BANNER, "ticker": tk, "reasoning": reasoning}
 
 
+@app.get("/context/{ticker}/prompt")
+def generate_prompt(ticker: str) -> dict[str, Any]:
+    """Assemble a structured research brief prompt for pasting into Claude."""
+    import contextlib
+    from datetime import date
+
+    from cortex.sources.congress import list_trades, recent_window
+    from cortex.sources.market import MarketSourceError
+    from cortex.sources.market import context_for as market_ctx
+    from cortex.thesis import list_theses
+
+    tk = ticker.upper()
+    today = date.today().isoformat()
+
+    # ── Market data ───────────────────────────────────────────────────────────
+    mkt: Any = None
+    with contextlib.suppress(MarketSourceError):
+        mkt = market_ctx(ticker)
+
+    # ── CORTEX candidate ──────────────────────────────────────────────────────
+    cand: Any = None
+    with contextlib.suppress(Exception):
+        candidates = discovery.list_candidates(_db())
+        cand = next((c for c in candidates if c.ticker == tk), None)
+
+    # ── Senate trades ─────────────────────────────────────────────────────────
+    senate_rows: list[str] = []
+    with contextlib.suppress(Exception):
+        trades = list_trades(_db(), ticker=ticker, since=recent_window(365), limit=10)
+        for t in trades:
+            senate_rows.append(
+                f"  • {t.senator} — {t.transaction_type} — {t.amount}"
+                + (f" ({t.transaction_date.isoformat()})" if t.transaction_date else "")
+            )
+
+    # ── Insider buys ──────────────────────────────────────────────────────────
+    insider_rows: list[str] = []
+    with contextlib.suppress(Exception):
+        from cortex.sources.insiders import list_insider_buys
+
+        for b in list_insider_buys(_db(), ticker=ticker, limit=10):
+            val = f"${b.value_usd:,.0f}" if b.value_usd else "—"
+            shares = f"{b.shares:,.0f} shares" if b.shares else "—"
+            insider_rows.append(
+                f"  • {b.filer_name} ({b.filer_role}) — {shares} / {val}"
+                + (f" ({b.transaction_date.isoformat()})" if b.transaction_date else "")
+            )
+
+    # ── Activist stakes ───────────────────────────────────────────────────────
+    activist_rows: list[str] = []
+    with contextlib.suppress(Exception):
+        from cortex.sources.activism import list_activism_events
+
+        for s in list_activism_events(_db(), ticker=ticker, limit=10):
+            activist_rows.append(
+                f"  • {s.filer}"
+                + (f" (filed {s.filing_date.isoformat()})" if s.filing_date else "")
+            )
+
+    # ── Active thesis ─────────────────────────────────────────────────────────
+    thesis_rows: list[str] = []
+    with contextlib.suppress(Exception):
+        for status in ("open", "pending"):
+            for th in list_theses(status=status, db_path=_db()):
+                if tk in [t.upper() for t in th.tickers]:
+                    thesis_rows.append(f"  Conviction: {th.conviction}/5  ({status})")
+                    thesis_rows.append(f"  Claim: {th.claim}")
+                    thesis_rows.append(f"  Falsifier: {th.falsifier}")
+                    if th.reasoning:
+                        thesis_rows.append(f"  Reasoning: {th.reasoning}")
+
+    # ── Helpers ───────────────────────────────────────────────────────────────
+    def _pct(v: float | None, scale: float = 1.0) -> str:
+        return f"{v * scale * 100:.1f}%" if v is not None else "—"
+
+    def _fmt(v: float | None, fmt: str = ".2f") -> str:
+        return format(v, fmt) if v is not None else "—"
+
+    def _section(rows: list[str], empty: str = "  None on record") -> str:
+        return "\n".join(rows) if rows else empty
+
+    # ── Price range position ──────────────────────────────────────────────────
+    range_pct = ""
+    if mkt and mkt.week_52_high and mkt.week_52_low and mkt.price:
+        span = mkt.week_52_high - mkt.week_52_low
+        if span > 0:
+            pct = (mkt.price - mkt.week_52_low) / span * 100
+            range_pct = f"  ({pct:.0f}% of 52-week range)"
+
+    # ── Assemble prompt ───────────────────────────────────────────────────────
+    name = mkt.company_name if mkt and mkt.company_name else tk
+    cap_str = f"${mkt.market_cap / 1e9:,.0f}B" if mkt and mkt.market_cap else "—"
+    lines: list[str] = [
+        f"CORTEX RESEARCH BRIEF — {tk} ({name})",
+        f"Generated: {today}",
+        "",
+        "═" * 60,
+        "MARKET DATA",
+        "═" * 60,
+        f"Price:        ${_fmt(mkt.price if mkt else None, ',.2f') if mkt else '—'}"
+        + (
+            f"  ({_fmt(mkt.day_change_percent if mkt and mkt.day_change_percent else None, '+.2f')}% today)"
+            if mkt
+            else ""
+        ),
+        f"52-week:      ${_fmt(mkt.week_52_low if mkt else None, ',.2f')} – ${_fmt(mkt.week_52_high if mkt else None, ',.2f')}{range_pct}",
+        f"Market cap:   {cap_str}",
+        f"P/E ratio:    {_fmt(mkt.pe_ratio if mkt else None, '.1f')}×",
+        "",
+        "═" * 60,
+        "CORTEX FACTOR SCORES  (cross-sectional z-scores, S&P 500 universe)",
+        "═" * 60,
+    ]
+    if cand:
+        lines += [
+            f"Composite:      {cand.composite_score:+.2f}σ  (rank #{cand.composite_rank} of discovery universe)",
+            f"Momentum 12-1:  z={_fmt(cand.z_momentum)}  raw={_pct(cand.momentum_12_1)} trailing return",
+            f"Low-vol:        z={_fmt(cand.z_low_vol)}  raw={_pct(cand.vol_252d)} annualised vol",
+            f"Sharpe 12m:     z={_fmt(cand.z_sharpe)}  raw={_fmt(cand.sharpe_12m)} Sharpe",
+            f"Value (EY):     z={_fmt(cand.z_value)}  raw={_pct(cand.earnings_yield)} earnings yield",
+            f"Quality (ROE):  z={_fmt(cand.z_quality)}  raw={_pct(cand.roe)} ROE",
+            f"Above 200d SMA: {'Yes' if cand.above_200d_sma else 'No' if cand.above_200d_sma is not None else '—'}",
+        ]
+    else:
+        lines.append(
+            "  Not in CORTEX discovery universe (run cortex discover to populate)"
+        )
+
+    lines += [
+        "",
+        "═" * 60,
+        "SENATE TRADES (last 365 days)",
+        "═" * 60,
+        _section(senate_rows),
+        "",
+        "═" * 60,
+        "INSIDER BUYS",
+        "═" * 60,
+        _section(insider_rows),
+        "",
+        "═" * 60,
+        "ACTIVIST STAKES",
+        "═" * 60,
+        _section(activist_rows),
+    ]
+
+    if mkt and mkt.news_headlines:
+        lines += [
+            "",
+            "═" * 60,
+            "NEWS HEADLINES",
+            "═" * 60,
+        ]
+        for h in mkt.news_headlines[:8]:
+            lines.append(f"  • {h}")
+
+    if thesis_rows:
+        lines += [
+            "",
+            "═" * 60,
+            "ACTIVE THESIS",
+            "═" * 60,
+            *thesis_rows,
+        ]
+
+    lines += [
+        "",
+        "═" * 60,
+        "REQUEST",
+        "═" * 60,
+        f"Based on the above data context for {tk}, provide a structured investment analysis covering:",
+        "",
+        "1. Thesis quality — does the data support a long position? What are the key risks?",
+        "2. Factor interpretation — how should the CORTEX composite be weighted vs individual z-scores?",
+        "3. Valuation — is the current P/E justifiable given the momentum and quality signals?",
+        "4. Catalysts — from news, insider, and senate data, what are the most significant near-term drivers?",
+        "5. Conviction and sizing — recommended conviction level (1–5) and position sizing rationale.",
+        "",
+        "Flag anything that would cause you to reverse or reduce the thesis.",
+        "Be specific and cite the data where possible.",
+    ]
+
+    return {"banner": _BANNER, "ticker": tk, "prompt": "\n".join(lines)}
+
+
 @app.get("/event-study/{signal}/car-series")
 def car_series_endpoint(signal: str) -> dict[str, Any]:
     """Day-by-day mean CAR (days 0–120) for a filing-gated signal. Cached 24 h.
