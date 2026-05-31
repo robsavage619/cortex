@@ -436,7 +436,7 @@ def _cmd_serve(args: argparse.Namespace) -> None:
 
     uvicorn.run(
         "cortex.api:app",
-        host="127.0.0.1",
+        host=args.host,
         port=args.port,
         reload=args.reload,
     )
@@ -648,6 +648,7 @@ def main() -> None:
     )
 
     serve_p = sub.add_parser("serve", help="Start the FastAPI server")
+    serve_p.add_argument("--host", default="127.0.0.1")
     serve_p.add_argument("--port", type=int, default=8000)
     serve_p.add_argument("--reload", action="store_true")
 
