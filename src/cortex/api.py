@@ -42,7 +42,16 @@ def _apply_schema_on_startup() -> None:
 
 _apply_schema_on_startup()
 
-app = FastAPI(title="CORTEX — factor research platform", version="0.1.0")
+_is_production = bool(os.environ.get("RAILWAY_ENVIRONMENT") or os.environ.get("CORTEX_PRODUCTION"))
+
+app = FastAPI(
+    title="CORTEX — factor research platform",
+    version="0.1.0",
+    # Disable interactive API docs in production — no reason to expose the schema map.
+    docs_url=None if _is_production else "/docs",
+    redoc_url=None if _is_production else "/redoc",
+    openapi_url=None if _is_production else "/openapi.json",
+)
 
 # ── HTTP Basic Auth (enabled when CORTEX_AUTH_USER is set) ────────────────────
 
@@ -64,13 +73,24 @@ class _BasicAuthMiddleware(BaseHTTPMiddleware):
 
 
 _auth_user = os.environ.get("CORTEX_AUTH_USER")
+_auth_pass = os.environ.get("CORTEX_AUTH_PASS", "")
+if _auth_user and not _auth_pass:
+    raise RuntimeError(
+        "CORTEX_AUTH_USER is set but CORTEX_AUTH_PASS is empty — "
+        "refusing to start with a blank password."
+    )
 if _auth_user:
     app.add_middleware(
         _BasicAuthMiddleware,
         username=_auth_user,
-        password=os.environ.get("CORTEX_AUTH_PASS", ""),
+        password=_auth_pass,
     )
     log.info("startup: HTTP Basic Auth enabled for user %r", _auth_user)
+elif _is_production:
+    log.warning(
+        "startup: CORTEX_AUTH_USER is not set — the app is running without authentication. "
+        "Set CORTEX_AUTH_USER and CORTEX_AUTH_PASS before exposing this to the internet."
+    )
 
 app.add_middleware(
     CORSMiddleware,
