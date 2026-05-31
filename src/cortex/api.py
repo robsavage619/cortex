@@ -599,11 +599,12 @@ def research_priors(body: PriorsIn) -> dict[str, Any]:
 
 
 @app.get("/context/{ticker}")
-def context(ticker: str) -> dict[str, Any]:
+def context(ticker: str, response: Response) -> dict[str, Any]:
     from cortex.sources.congress import list_trades, recent_window
     from cortex.sources.market import MarketSourceError
     from cortex.sources.market import context_for as market_ctx
 
+    response.headers["Cache-Control"] = "private, max-age=900"
     result: dict[str, Any] = {"banner": _BANNER, "ticker": ticker.upper()}
 
     try:
@@ -677,9 +678,12 @@ def context(ticker: str) -> dict[str, Any]:
 
 
 @app.get("/context/{ticker}/history")
-def price_history(ticker: str, period: str = "6mo") -> dict[str, Any]:
+def price_history(
+    ticker: str, response: Response, period: str = "6mo"
+) -> dict[str, Any]:
     from cortex.sources.market import MarketSourceError, history_for
 
+    response.headers["Cache-Control"] = "private, max-age=900"
     try:
         bars = history_for(ticker, period=period)
     except MarketSourceError as exc:
@@ -770,7 +774,7 @@ def get_congress_member(name: str, days: int = 730) -> dict[str, Any]:
 
     with connect(_db(), read_only=True) as conn:
         rows = conn.execute(
-            f"""
+            """
             SELECT ticker, transaction_type, amount, transaction_date,
                    disclosure_date, asset_description, report_url
             FROM congress_trades

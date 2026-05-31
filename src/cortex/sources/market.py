@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass
 from typing import Any
 
@@ -36,6 +37,13 @@ class MarketSourceError(Exception):
     """Raised when yfinance data cannot be fetched or parsed."""
 
 
+# 15-minute TTL — stale enough to survive a full dashboard load without hitting
+# yfinance 60×, fresh enough for intraday research use.
+_CACHE_TTL = 900.0
+_CTX_CACHE: dict[str, tuple[float, PriceContext]] = {}
+_HIST_CACHE: dict[tuple[str, str], tuple[float, list[PriceBar]]] = {}
+
+
 _VALID_PERIODS = frozenset(
     {"1d", "5d", "1mo", "3mo", "6mo", "1y", "2y", "5y", "ytd", "max"}
 )
@@ -65,6 +73,11 @@ def history_for(ticker: str, *, period: str = "6mo") -> list[PriceBar]:
         raise MarketSourceError(
             f"Invalid period {period!r}; expected one of {sorted(_VALID_PERIODS)}"
         )
+
+    cache_key = (ticker.upper(), period)
+    cached = _HIST_CACHE.get(cache_key)
+    if cached is not None and time.monotonic() - cached[0] < _CACHE_TTL:
+        return cached[1]
 
     try:
         import yfinance as yf
@@ -104,6 +117,7 @@ def history_for(ticker: str, *, period: str = "6mo") -> list[PriceBar]:
                 volume=_as_float(row.get("Volume")) or 0.0,
             )
         )
+    _HIST_CACHE[cache_key] = (time.monotonic(), bars)
     return bars
 
 
@@ -112,6 +126,11 @@ def context_for(ticker: str, *, news_limit: int = 5) -> PriceContext:
 
     Degrades visibly on failure — never returns stale/silent data.
     """
+    key = ticker.upper()
+    cached = _CTX_CACHE.get(key)
+    if cached is not None and time.monotonic() - cached[0] < _CACHE_TTL:
+        return cached[1]
+
     try:
         import yfinance as yf
     except ImportError as exc:
@@ -150,7 +169,7 @@ def context_for(ticker: str, *, news_limit: int = 5) -> PriceContext:
             if title:
                 news_items.append((title, url))
 
-        return PriceContext(
+        ctx = PriceContext(
             ticker=ticker.upper(),
             price=price,
             day_change_percent=day_change,
@@ -163,6 +182,8 @@ def context_for(ticker: str, *, news_limit: int = 5) -> PriceContext:
             company_name=info.get("longName") or info.get("shortName") or None,
             website=info.get("website") or None,
         )
+        _CTX_CACHE[key] = (time.monotonic(), ctx)
+        return ctx
     except Exception as exc:
         raise MarketSourceError(f"yfinance fetch failed for {ticker}: {exc}") from exc
 
