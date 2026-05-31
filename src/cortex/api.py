@@ -53,17 +53,45 @@ app = FastAPI(
     openapi_url=None if _is_production else "/openapi.json",
 )
 
-# ── HTTP Basic Auth (enabled when CORTEX_AUTH_USER is set) ────────────────────
+# ── HTTP Basic Auth ───────────────────────────────────────────────────────────
+# Supports multiple users via CORTEX_AUTH_USERS="user1:pass1,user2:pass2"
+# Falls back to legacy CORTEX_AUTH_USER / CORTEX_AUTH_PASS for single-user.
+
+def _load_credentials() -> dict[str, str]:
+    """Return {username: base64(user:pass)} for every authorised user."""
+    creds: dict[str, str] = {}
+    raw = os.environ.get("CORTEX_AUTH_USERS", "")
+    for pair in (p.strip() for p in raw.split(",") if p.strip()):
+        if ":" not in pair:
+            log.warning("startup: skipping malformed CORTEX_AUTH_USERS entry (no colon)")
+            continue
+        user, pw = pair.split(":", 1)
+        if not pw:
+            raise RuntimeError(f"CORTEX_AUTH_USERS: password for {user!r} is empty — refusing to start.")
+        creds[user] = base64.b64encode(f"{user}:{pw}".encode()).decode()
+    # Legacy single-user vars
+    legacy_user = os.environ.get("CORTEX_AUTH_USER")
+    legacy_pass = os.environ.get("CORTEX_AUTH_PASS", "")
+    if legacy_user and legacy_user not in creds:
+        if not legacy_pass:
+            raise RuntimeError(
+                "CORTEX_AUTH_USER is set but CORTEX_AUTH_PASS is empty — "
+                "refusing to start with a blank password."
+            )
+        creds[legacy_user] = base64.b64encode(f"{legacy_user}:{legacy_pass}".encode()).decode()
+    return creds
+
 
 class _BasicAuthMiddleware(BaseHTTPMiddleware):
-    def __init__(self, app: Any, username: str, password: str) -> None:
+    def __init__(self, app: Any, credentials: dict[str, str]) -> None:
         super().__init__(app)
-        self._expected = base64.b64encode(f"{username}:{password}".encode()).decode()
+        # Store as a list of encoded tokens for constant-time comparison
+        self._tokens: list[str] = list(credentials.values())
 
     async def dispatch(self, request: Request, call_next: Any) -> Response:
         auth = request.headers.get("Authorization", "")
         token = auth[6:] if auth.startswith("Basic ") else ""
-        if not secrets.compare_digest(token, self._expected):
+        if not any(secrets.compare_digest(token, t) for t in self._tokens):
             return Response(
                 "Unauthorized",
                 status_code=401,
@@ -72,24 +100,14 @@ class _BasicAuthMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 
-_auth_user = os.environ.get("CORTEX_AUTH_USER")
-_auth_pass = os.environ.get("CORTEX_AUTH_PASS", "")
-if _auth_user and not _auth_pass:
-    raise RuntimeError(
-        "CORTEX_AUTH_USER is set but CORTEX_AUTH_PASS is empty — "
-        "refusing to start with a blank password."
-    )
-if _auth_user:
-    app.add_middleware(
-        _BasicAuthMiddleware,
-        username=_auth_user,
-        password=_auth_pass,
-    )
-    log.info("startup: HTTP Basic Auth enabled for user %r", _auth_user)
+_credentials = _load_credentials()
+if _credentials:
+    app.add_middleware(_BasicAuthMiddleware, credentials=_credentials)
+    log.info("startup: HTTP Basic Auth enabled for users: %s", list(_credentials))
 elif _is_production:
     log.warning(
-        "startup: CORTEX_AUTH_USER is not set — the app is running without authentication. "
-        "Set CORTEX_AUTH_USER and CORTEX_AUTH_PASS before exposing this to the internet."
+        "startup: no auth credentials set — app is running without authentication. "
+        "Set CORTEX_AUTH_USERS or CORTEX_AUTH_USER + CORTEX_AUTH_PASS."
     )
 
 app.add_middleware(
