@@ -518,16 +518,16 @@ function OverviewTab({
           </div>
         )}
 
-        {/* Senate trades — warn/amber / congressional */}
-        {ctx?.senate_trades && ctx.senate_trades.length > 0 && (
+        {/* Congress trades — warn/amber / congressional */}
+        {ctx?.congress_trades && ctx.congress_trades.length > 0 && (
           <div className="border border-border-dim border-l-4 border-l-warn/60 bg-warn/[0.04] p-4 space-y-2">
             <span className="num text-[8px] tracking-widest text-warn/50 block">CONGRESSIONAL</span>
-            <span className="label block text-warn">SENATE ACTIVITY</span>
+            <span className="label block text-warn">CONGRESS ACTIVITY</span>
             <p className="font-sans text-[11px] text-muted">
               Members of Congress are required to disclose stock trades. Significant insider buying can be a useful data point.
             </p>
             <div className="space-y-1.5">
-              {ctx.senate_trades.slice(0, 4).map((t, i) => (
+              {ctx.congress_trades.slice(0, 4).map((t, i) => (
                 <div key={i} className="flex items-center justify-between border-b border-border-dim pb-1.5">
                   <span className="font-sans text-[12px] text-ink">{t.senator}</span>
                   <div className="flex items-center gap-2">

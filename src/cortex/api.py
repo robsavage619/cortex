@@ -74,16 +74,19 @@ _refresh_state: dict[str, Any] = {
 def _run_refresh() -> None:
     from cortex.discovery import run_discovery
     from cortex.sources.congress import fetch_senate_trades, recent_window, store_trades
+    from cortex.sources.house import fetch_house_trades, store_house_trades
 
     try:
         db = _db()
 
         try:
             _refresh_state["steps"]["congress"] = "running"
-            trades = fetch_senate_trades(since=recent_window(120), max_reports=400)
-            new = store_trades(trades, db)
+            senate = fetch_senate_trades(since=recent_window(120), max_reports=400)
+            new_s = store_trades(senate, db)
+            house = fetch_house_trades(since=recent_window(120), max_pdfs=200)
+            new_h = store_house_trades(house, db)
             _refresh_state["steps"]["congress"] = (
-                f"done — {len(trades)} trades ({new} new)"
+                f"done — {len(senate) + len(house)} trades ({new_s + new_h} new)"
             )
         except Exception as exc:  # noqa: BLE001 - record and continue to discovery
             log.warning("refresh: congress sync failed: %s", exc)
@@ -518,9 +521,10 @@ def context(ticker: str) -> dict[str, Any]:
 
     try:
         trades = list_trades(_db(), ticker=ticker, since=recent_window(365), limit=10)
-        result["senate_trades"] = [
+        result["congress_trades"] = [
             {
                 "senator": t.senator,
+                "chamber": t.chamber,
                 "transaction_type": t.transaction_type,
                 "amount": t.amount,
                 "transaction_date": (
@@ -530,7 +534,7 @@ def context(ticker: str) -> dict[str, Any]:
             for t in trades
         ]
     except Exception as exc:  # noqa: BLE001 - degrade visibly, never block context
-        result["senate_trades_error"] = str(exc)
+        result["congress_trades_error"] = str(exc)
 
     try:
         from cortex.sources.insiders import list_insider_buys
@@ -596,18 +600,23 @@ def price_history(ticker: str, period: str = "6mo") -> dict[str, Any]:
 
 @app.get("/congress/stats")
 def get_congress_stats(days: int = 365) -> dict[str, Any]:
-    """Aggregated Senate-trade analytics over a trailing window."""
+    """Aggregated Congress-trade analytics (Senate + House) over a trailing window."""
     from cortex.sources.congress import congress_stats
+    from cortex.sources.legislators import photo_url_for
 
-    return {"banner": _BANNER, "days": days, **congress_stats(_db(), days=days)}
+    stats = congress_stats(_db(), days=days)
+    for m in stats.get("top_members", []):
+        m["photo_url"] = photo_url_for(m["senator"])
+    return {"banner": _BANNER, "days": days, **stats}
 
 
 @app.get("/congress")
 def get_congress(
     ticker: str | None = None, days: int = 120, limit: int = 100
 ) -> dict[str, Any]:
-    """Recent Senate trades from the local mirror (via `cortex congress-sync`)."""
+    """Recent Congress trades (Senate + House) from the local mirror."""
     from cortex.sources.congress import list_trades, recent_window
+    from cortex.sources.legislators import photo_url_for
 
     trades = list_trades(_db(), ticker=ticker, since=recent_window(days), limit=limit)
     return {
@@ -617,6 +626,8 @@ def get_congress(
         "trades": [
             {
                 "senator": t.senator,
+                "chamber": t.chamber,
+                "photo_url": photo_url_for(t.senator),
                 "ticker": t.ticker,
                 "transaction_type": t.transaction_type,
                 "amount": t.amount,

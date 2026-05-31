@@ -57,7 +57,7 @@ function HowToPanel() {
         {open ? <ChevronDown className="h-3.5 w-3.5 text-faint" /> : <ChevronRight className="h-3.5 w-3.5 text-faint" />}
         {!open && (
           <span className="font-sans text-[11px] text-faint">
-            — every stock trade U.S. senators are <span className="text-muted">legally required to disclose</span>, aggregated into buy/sell flow
+            — every stock trade U.S. <span className="text-muted">senators and representatives</span> are legally required to disclose, aggregated into buy/sell flow
           </span>
         )}
       </button>
@@ -68,9 +68,9 @@ function HowToPanel() {
             <div className="border-l-2 border-cyan/30 pl-3">
               <div className="num mb-1 text-[11px] font-semibold text-cyan">Where it comes from</div>
               <p className="font-sans text-[11px] leading-snug text-faint">
-                The 2012 <span className="text-muted">STOCK Act</span> forces every senator to file a Periodic
+                The 2012 <span className="text-muted">STOCK Act</span> forces every senator and representative to file a Periodic
                 Transaction Report within <span className="text-muted">45 days</span> of any stock trade. This page
-                mirrors those filings from the Senate eFD system.
+                mirrors filings from the Senate eFD system and the House Clerk's annual disclosure archive.
               </p>
             </div>
             <div className="border-l-2 border-warn/30 pl-3">
@@ -287,6 +287,24 @@ function TopTickers({ rows, onPick, days }: {
 
 // ── Top members ────────────────────────────────────────────────────────────────
 
+function MemberAvatar({ name, photoUrl }: { name: string; photoUrl: string | null }) {
+  if (!photoUrl) {
+    return (
+      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-border text-[9px] font-bold text-faint">
+        {name.replace(/^Hon\.\s*/i, '').split(' ').filter(Boolean).map(p => p[0]).slice(0, 2).join('')}
+      </div>
+    )
+  }
+  return (
+    <img
+      src={photoUrl}
+      alt={name}
+      className="h-7 w-7 shrink-0 rounded-full object-cover object-top"
+      onError={e => { (e.target as HTMLImageElement).style.display = 'none' }}
+    />
+  )
+}
+
 function TopMembers({ rows }: { rows: CongressMemberStat[] }) {
   return (
     <div className="flex flex-col">
@@ -295,17 +313,22 @@ function TopMembers({ rows }: { rows: CongressMemberStat[] }) {
         const buyPct = total > 0 ? (r.buy_notional / total) * 100 : 0
         return (
           <div key={r.senator} className="border-b border-border-dim py-1.5">
-            <div className="flex items-baseline justify-between gap-2">
-              <span className="truncate font-sans text-[11px] text-ink">{r.senator}</span>
-              <span className="num shrink-0 text-[10px] text-faint">{r.count} filings</span>
-            </div>
-            <div className="mt-1 flex h-1.5 w-full overflow-hidden bg-border/40">
-              <div className="h-full bg-up/60" style={{ width: `${buyPct}%` }} />
-              <div className="h-full bg-down/60" style={{ width: `${100 - buyPct}%` }} />
-            </div>
-            <div className="mt-0.5 flex justify-between">
-              <span className="num text-[9px] text-up">{fmtUsd(r.buy_notional)} buys</span>
-              <span className="num text-[9px] text-down">{fmtUsd(r.sell_notional)} sells</span>
+            <div className="flex items-center gap-2">
+              <MemberAvatar name={r.senator} photoUrl={r.photo_url ?? null} />
+              <div className="min-w-0 flex-1">
+                <div className="flex items-baseline justify-between gap-2">
+                  <span className="truncate font-sans text-[11px] text-ink">{r.senator}</span>
+                  <span className="num shrink-0 text-[10px] text-faint">{r.count} filings</span>
+                </div>
+                <div className="mt-1 flex h-1.5 w-full overflow-hidden bg-border/40">
+                  <div className="h-full bg-up/60" style={{ width: `${buyPct}%` }} />
+                  <div className="h-full bg-down/60" style={{ width: `${100 - buyPct}%` }} />
+                </div>
+                <div className="mt-0.5 flex justify-between">
+                  <span className="num text-[9px] text-up">{fmtUsd(r.buy_notional)} buys</span>
+                  <span className="num text-[9px] text-down">{fmtUsd(r.sell_notional)} sells</span>
+                </div>
+              </div>
             </div>
           </div>
         )
@@ -472,7 +495,7 @@ export function Congress() {
             <section className="border border-border bg-bg-panel p-3">
               <div className="mb-2 flex items-baseline gap-2">
                 <span className="num text-[11px] font-semibold tracking-widest text-cyan">MOST ACTIVE MEMBERS</span>
-                <span className="font-sans text-[10px] text-faint">by filing count · bar = buy/sell split</span>
+                <span className="font-sans text-[10px] text-faint">senate + house · by filing count · bar = buy/sell split</span>
               </div>
               <TopMembers rows={data.top_members} />
             </section>
@@ -500,7 +523,17 @@ export function Congress() {
                     const buy = tr.transaction_type.toLowerCase().includes('purchase')
                     return (
                       <tr key={`${tr.ticker}-${i}`} className="border-b border-border-dim hover:bg-bg-hover">
-                        <td className="px-2 py-1.5 font-sans text-[11px] text-muted">{tr.senator}</td>
+                        <td className="px-2 py-1.5">
+                          <div className="flex items-center gap-1.5">
+                            <MemberAvatar name={tr.senator} photoUrl={tr.photo_url ?? null} />
+                            <div className="min-w-0">
+                              <div className="truncate font-sans text-[11px] text-muted">{tr.senator}</div>
+                              <div className={cn('num text-[9px] font-semibold', tr.chamber === 'house' ? 'text-warn' : 'text-cyan')}>
+                                {tr.chamber === 'house' ? 'HOUSE' : 'SENATE'}
+                              </div>
+                            </div>
+                          </div>
+                        </td>
                         <td className="px-2 py-1.5">
                           <button
                             onClick={() => setModalTicker(tr.ticker)}

@@ -171,8 +171,8 @@ export interface TickerContext {
   ticker: string
   market?: MarketContext
   market_error?: string
-  senate_trades?: SenateTrade[]
-  senate_trades_error?: string
+  congress_trades?: SenateTrade[]
+  congress_trades_error?: string
   insider_buys?: InsiderBuy[]
   insider_buys_error?: string
   activist_stakes?: ActivistStake[]
@@ -302,6 +302,8 @@ export interface TickerResearch {
 
 export interface CongressTrade {
   senator: string
+  chamber: string
+  photo_url: string | null
   ticker: string
   transaction_type: string
   amount: string
@@ -350,6 +352,7 @@ export interface CongressTickerStat {
 
 export interface CongressMemberStat {
   senator: string
+  photo_url: string | null
   count: number
   buy_notional: number
   sell_notional: number

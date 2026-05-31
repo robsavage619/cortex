@@ -64,6 +64,7 @@ class CongressTrade:
     disclosure_date: date | None
     asset_description: str
     report_url: str = ""
+    chamber: str = "senate"
 
     @property
     def dedupe_id(self) -> str:
@@ -499,7 +500,7 @@ def list_trades(
         rows = conn.execute(
             f"""
             SELECT senator, ticker, transaction_type, amount,
-                   transaction_date, disclosure_date, asset_description, report_url
+                   transaction_date, disclosure_date, asset_description, report_url, chamber
             FROM congress_trades
             {where}
             ORDER BY COALESCE(disclosure_date, transaction_date) DESC NULLS LAST
@@ -518,6 +519,7 @@ def list_trades(
             disclosure_date=r[5],
             asset_description=r[6],
             report_url=r[7] or "",
+            chamber=r[8] or "senate",
         )
         for r in rows
     ]

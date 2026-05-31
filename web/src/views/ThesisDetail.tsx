@@ -355,10 +355,10 @@ export function ThesisDetail() {
             </>
           )}
 
-          {ctx.data?.senate_trades && ctx.data.senate_trades.length > 0 && (
+          {ctx.data?.congress_trades && ctx.data.congress_trades.length > 0 && (
             <>
-              <SectionLabel>SENATE TRADES</SectionLabel>
-              {ctx.data.senate_trades.slice(0, 5).map((tr, i) => (
+              <SectionLabel>CONGRESS TRADES</SectionLabel>
+              {ctx.data.congress_trades.slice(0, 5).map((tr, i) => (
                 <div key={i} className="border-b border-border-dim px-5 py-2 last:border-b-0">
                   <span className="block truncate font-sans text-[11px] text-ink">{tr.senator}</span>
                   <span className={cn('num text-[10px]',
