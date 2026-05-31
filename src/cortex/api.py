@@ -143,6 +143,39 @@ def _db() -> Path:
 # scan. Heavy work (yfinance, scraping) runs without holding a DB connection;
 # only the brief store steps open read-write, so concurrent reads stay healthy.
 
+
+def _prewarm_market_cache(db_path: Path) -> None:
+    """Warm context + history for top candidates in a low-priority daemon thread.
+
+    Runs after sync completes. Isolated from the sync thread so it doesn't
+    compete for the 1 GB memory budget on Railway.
+    """
+    import gc
+    import time
+
+    from cortex.discovery import list_candidates
+    from cortex.sources.market import MarketSourceError, context_for, history_for
+
+    try:
+        top = [c.ticker for c in list_candidates(db_path)[:30]]
+    except Exception as exc:
+        log.warning("prewarm: list_candidates failed: %s", exc)
+        return
+
+    log.info("prewarm: warming %d tickers", len(top))
+    for ticker in top:
+        try:
+            context_for(ticker)
+            history_for(ticker, period="3mo")
+        except MarketSourceError:
+            pass
+        except Exception as exc:
+            log.debug("prewarm: %s failed: %s", ticker, exc)
+        gc.collect()
+        time.sleep(0.5)  # yield — don't hammer yfinance or spike RSS
+    log.info("prewarm: done")
+
+
 _refresh_lock = threading.Lock()
 _refresh_state: dict[str, Any] = {
     "running": False,
@@ -231,24 +264,9 @@ def _run_refresh() -> None:
             log.warning("refresh: volatility screen failed: %s", exc)
             _refresh_state["steps"]["volatility"] = f"failed — {exc}"
 
-        # Pre-warm the market context/history cache for the top candidates so
-        # that the first user request hits the in-memory cache, not yfinance.
-        try:
-            from cortex.discovery import list_candidates
-            from cortex.sources.market import context_for, history_for
-
-            top = [c.ticker for c in list_candidates(db)[:30]]
-            log.info("refresh: pre-warming market cache for %d tickers", len(top))
-            for ticker in top:
-                try:
-                    context_for(ticker)
-                    history_for(ticker, period="3mo")
-                    history_for(ticker, period="6mo")
-                except Exception:  # noqa: BLE001 - best-effort, never block
-                    pass
-            log.info("refresh: market cache pre-warm done")
-        except Exception as exc:  # noqa: BLE001
-            log.warning("refresh: market cache pre-warm failed: %s", exc)
+        # Kick off market-cache pre-warm in a separate daemon thread so it
+        # doesn't compete with the just-completed sync for the 1 GB budget.
+        threading.Thread(target=_prewarm_market_cache, args=(db,), daemon=True).start()
 
     except Exception as exc:  # noqa: BLE001 - db init or import failure
         log.exception("refresh: fatal error: %s", exc)
