@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import argparse
 import logging
-from datetime import date
+from datetime import date, timedelta
 
 log = logging.getLogger(__name__)
 
@@ -157,6 +157,35 @@ def _cmd_congress_sync(args: argparse.Namespace) -> None:
             new = store_trades(trades, settings.duckdb_path)
             print(f"Synced {len(trades)} trades ({new} new) since {since}")
     except CongressSourceError as exc:
+        print(f"Sync failed: {exc}")
+        raise SystemExit(1) from exc
+
+
+def _cmd_house_sync(args: argparse.Namespace) -> None:
+    from cortex.config import load_settings
+    from cortex.sources.house import (
+        HouseSourceError,
+        backfill_house_trades,
+        fetch_house_trades,
+        store_house_trades,
+    )
+
+    settings = load_settings()
+    try:
+        if args.backfill_from_year:
+            total = backfill_house_trades(
+                settings.duckdb_path,
+                start_year=args.backfill_from_year,
+                progress=lambda msg: print(f"  {msg}"),
+            )
+            print(f"Backfill complete — {total} new trades since {args.backfill_from_year}")
+        else:
+            since = date.today() - timedelta(days=args.since_days)
+            log.info("Fetching House PTR filings since %s…", since)
+            trades = fetch_house_trades(since=since, max_pdfs=args.max_pdfs)
+            new = store_house_trades(trades, settings.duckdb_path)
+            print(f"Synced {len(trades)} trades ({new} new) since {since}")
+    except HouseSourceError as exc:
         print(f"Sync failed: {exc}")
         raise SystemExit(1) from exc
 
@@ -517,6 +546,29 @@ def main() -> None:
         "persisting per 180-day window (resumable)",
     )
 
+    house_p = sub.add_parser("house-sync", help="Scrape House Clerk PTR filings into the DB")
+    house_p.add_argument(
+        "--since-days",
+        type=int,
+        default=90,
+        metavar="N",
+        help="Look back N days of filings (default: 90)",
+    )
+    house_p.add_argument(
+        "--max-pdfs",
+        type=int,
+        default=500,
+        metavar="N",
+        help="Max PTR PDFs to download (default: 500)",
+    )
+    house_p.add_argument(
+        "--backfill-from-year",
+        type=int,
+        default=None,
+        metavar="YYYY",
+        help="Backfill the archive from this year (resumable via dedup)",
+    )
+
     sub.add_parser("funds-sync", help="Sync institutional 13F moves into the DB")
     sub.add_parser(
         "funds-backfill",
@@ -611,6 +663,7 @@ def main() -> None:
         "discover": _cmd_discover,
         "vol-screen": _cmd_vol_screen,
         "congress-sync": _cmd_congress_sync,
+        "house-sync": _cmd_house_sync,
         "funds-sync": _cmd_funds_sync,
         "funds-backfill": _cmd_funds_backfill,
         "insiders-sync": _cmd_insiders_sync,

@@ -12,11 +12,14 @@ authors = [
     { name = "Rob Savage", email = "63321971+robsavage619@users.noreply.github.com" },
 ]
 dependencies = [
+    "anthropic>=0.105.2",
     "duckdb>=1.5.3",
     "edgartools>=5.31.5",
     "fastapi>=0.136.1",
     "fastembed>=0.8.0",
     "httpx>=0.27",
+    "pdfplumber>=0.11.9",
+    "python-dotenv>=1.2.2",
     "pyyaml>=6.0",
     "scikit-learn>=1.8.0",
     "uvicorn[standard]>=0.47.0",
