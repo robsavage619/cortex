@@ -342,17 +342,19 @@ def run_volatility_screen(
     db_path: Path,
     top_n: int = 75,
     lookback_days: int = DEFAULT_LOOKBACK_DAYS,
+    tickers: list[str] | None = None,
 ) -> list[VolStock]:
-    """Run the swing screen over the S&P 500 + S&P 400 universe.
+    """Run the swing screen over the given ticker universe.
 
-    Ranks stocks by swing % × consistency so that nimble mid-caps compete
-    fairly with expensive large-caps.
+    Defaults to S&P 500 + S&P 400 + S&P 600. Pass ``tickers`` to restrict to a
+    smaller universe (e.g. S&P 500 only) on memory-constrained deployments.
 
     Args:
         db_path: DuckDB path to persist results to.
         top_n: Number of stocks to keep.
         lookback_days: Trading-day window; floored at ``MIN_LOOKBACK_DAYS``
             (two weeks) per the feature spec.
+        tickers: Override the universe. Defaults to composite (≈1500 names).
     """
     from cortex.sources.universe import composite_tickers
 
@@ -360,7 +362,8 @@ def run_volatility_screen(
     as_of = date.today()
     now = datetime.now(tz=UTC)
 
-    tickers = composite_tickers()
+    if tickers is None:
+        tickers = composite_tickers()
     log.info("Swing screen: scanning %d tickers (%dd window)", len(tickers), lookback)
 
     metrics = _compute_metrics(tickers, lookback)

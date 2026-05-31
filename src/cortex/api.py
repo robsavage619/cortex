@@ -222,9 +222,10 @@ def _run_refresh() -> None:
 
         try:
             _refresh_state["steps"]["volatility"] = "running"
+            from cortex.sources.universe import sp500_tickers
             from cortex.volatility_screen import run_volatility_screen
 
-            vol = run_volatility_screen(db)
+            vol = run_volatility_screen(db, tickers=sp500_tickers())
             _refresh_state["steps"]["volatility"] = f"done — {len(vol)} stocks"
         except Exception as exc:  # noqa: BLE001 - record and continue
             log.warning("refresh: volatility screen failed: %s", exc)
