@@ -39,3 +39,53 @@ export function daysUntil(iso: string): number {
   const now = Date.now()
   return Math.ceil((target - now) / 86_400_000)
 }
+
+/** Returns true for any purchase/buy transaction type (handles Senate "Purchase" and House "P"/"P (partial)"). */
+export function isBuy(tx: string | null | undefined): boolean {
+  const t = (tx ?? '').toLowerCase().trim()
+  return t === 'p' || t.startsWith('p ') || t.startsWith('p(') || t.includes('purchase')
+}
+
+/** Normalises a transaction_type string to "BUY" or "SELL" for display. */
+export function txLabel(tx: string | null | undefined): string {
+  return isBuy(tx) ? 'BUY' : 'SELL'
+}
+
+/** Strips honorary prefixes ("Hon.", "Sen.", "Rep.", etc.) for display. */
+export function stripTitle(name: string | null | undefined): string {
+  return (name ?? '').replace(/^(Hon|Sen|Rep)\.?\s+/i, '').trim()
+}
+
+/** Shared thesis signal score used on Dashboard cards and StockModal ThesisTab. */
+export function computeFactors(
+  thesis: { conviction: number; why_now: string | null; base_rate: string | null; pre_mortem: string | null },
+  market: { price?: number | null; week_52_high?: number | null; week_52_low?: number | null; day_change_percent?: number | null } | undefined,
+) {
+  const conviction = (thesis.conviction / 5) * 40
+
+  let valueZone = 0
+  if (market?.price != null && market.week_52_high != null && market.week_52_low != null) {
+    const range = market.week_52_high - market.week_52_low
+    if (range > 0) {
+      const pos = (market.price - market.week_52_low) / range
+      valueZone = pos < 0.33 ? 25 : pos < 0.5 ? 15 : pos < 0.75 ? 5 : 0
+    }
+  }
+
+  let momentum = 0
+  if (market?.day_change_percent != null) {
+    const d = market.day_change_percent
+    momentum = d > 2 ? 20 : d > 0 ? 10 : d > -2 ? 5 : 0
+  }
+
+  const research =
+    (thesis.why_now ? 5 : 0) + (thesis.base_rate ? 5 : 0) + (thesis.pre_mortem ? 5 : 0)
+
+  return {
+    conviction,
+    valueZone,
+    momentum,
+    research,
+    total: Math.min(100, Math.round(conviction + valueZone + momentum + research)),
+  }
+}

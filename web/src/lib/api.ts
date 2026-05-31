@@ -10,6 +10,7 @@ import type {
   CandidateResponse,
   CandidatesResponse,
   CaseResponse,
+  CongressMemberProfile,
   CongressResponse,
   CongressStatsResponse,
   DailyCARPoint,
@@ -292,6 +293,20 @@ export function useCongressStats(days = 365) {
     queryFn: async () => {
       const { data } = await http.get<CongressStatsResponse>('/congress/stats', {
         params: { days },
+      })
+      return data
+    },
+  })
+}
+
+export function useCongressMember(name: string | null, days = 730) {
+  return useQuery({
+    queryKey: ['congress-member', name, days],
+    enabled: !!name,
+    staleTime: 5 * 60_000,
+    queryFn: async () => {
+      const { data } = await http.get<CongressMemberProfile>('/congress/member', {
+        params: { name, days },
       })
       return data
     },

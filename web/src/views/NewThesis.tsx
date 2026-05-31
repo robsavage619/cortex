@@ -179,7 +179,7 @@ export function NewThesis() {
           <span className="num text-sm font-semibold text-ink">NEW THESIS</span>
           <span className="font-sans ml-3 text-[12px] text-faint">State a falsifiable claim and what would prove it wrong.</span>
         </div>
-        <button onClick={() => navigate(-1)} className="num text-[10px] tracking-widest text-muted hover:text-ink">
+        <button onClick={() => { if (window.history.length > 1) navigate(-1); else navigate('/') }} className="num text-[10px] tracking-widest text-muted hover:text-ink">
           ← CANCEL
         </button>
       </div>

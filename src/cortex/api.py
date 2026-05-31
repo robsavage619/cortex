@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import base64
 import logging
+import os
+import re
+import secrets
 import threading
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
@@ -8,9 +12,11 @@ from typing import Any
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, field_validator
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
 
 import cortex.calibration as cal
 import cortex.cases as cases
@@ -27,15 +33,44 @@ _WEB_DIST = Path(__file__).parents[2] / "web" / "dist"
 
 
 def _apply_schema_on_startup() -> None:
-    from contextlib import suppress
-
-    with suppress(Exception), connect(load_settings().duckdb_path) as conn:
-        apply_schema(conn)
+    try:
+        with connect(load_settings().duckdb_path) as conn:
+            apply_schema(conn)
+    except Exception as exc:
+        log.warning("startup: schema apply failed — %s", exc)
 
 
 _apply_schema_on_startup()
 
 app = FastAPI(title="CORTEX — factor research platform", version="0.1.0")
+
+# ── HTTP Basic Auth (enabled when CORTEX_AUTH_USER is set) ────────────────────
+
+class _BasicAuthMiddleware(BaseHTTPMiddleware):
+    def __init__(self, app: Any, username: str, password: str) -> None:
+        super().__init__(app)
+        self._expected = base64.b64encode(f"{username}:{password}".encode()).decode()
+
+    async def dispatch(self, request: Request, call_next: Any) -> Response:
+        auth = request.headers.get("Authorization", "")
+        token = auth[6:] if auth.startswith("Basic ") else ""
+        if not secrets.compare_digest(token, self._expected):
+            return Response(
+                "Unauthorized",
+                status_code=401,
+                headers={"WWW-Authenticate": 'Basic realm="CORTEX"'},
+            )
+        return await call_next(request)
+
+
+_auth_user = os.environ.get("CORTEX_AUTH_USER")
+if _auth_user:
+    app.add_middleware(
+        _BasicAuthMiddleware,
+        username=_auth_user,
+        password=os.environ.get("CORTEX_AUTH_PASS", ""),
+    )
+    log.info("startup: HTTP Basic Auth enabled for user %r", _auth_user)
 
 app.add_middleware(
     CORSMiddleware,
@@ -334,7 +369,7 @@ def get_thesis(thesis_id: str) -> dict[str, Any]:
 def post_thesis(body: ThesisIn) -> dict[str, Any]:
     activate_at: datetime | None = None
     if body.cooling_off_hours:
-        activate_at = datetime.now() + timedelta(hours=body.cooling_off_hours)
+        activate_at = datetime.now(tz=UTC) + timedelta(hours=body.cooling_off_hours)
     try:
         t = th.create(
             tickers=body.tickers,
@@ -642,6 +677,155 @@ def get_congress(
             }
             for t in trades
         ],
+    }
+
+
+@app.get("/congress/member")
+def get_congress_member(name: str, days: int = 730) -> dict[str, Any]:
+    """Full trade profile for a single Congress member."""
+    from collections import defaultdict
+
+    from cortex.sources.legislators import member_info_for
+    from cortex.storage.db import connect
+
+    info = member_info_for(name) or {}
+    since = __import__("datetime").date.today() - __import__("datetime").timedelta(days=days)
+
+    # The DB may store names with an "Hon." prefix (House filings) or without.
+    # Try the canonical name from legislators first, then the raw query name,
+    # then a LIKE fallback on last name so we always get the right rows.
+    canonical = info.get("name", name)
+    last_name = (info.get("last") or name.split()[-1]).replace("'", "''")
+
+    with connect(_db(), read_only=True) as conn:
+        rows = conn.execute(
+            f"""
+            SELECT ticker, transaction_type, amount, transaction_date,
+                   disclosure_date, asset_description, report_url
+            FROM congress_trades
+            WHERE (senator = ? OR senator = ? OR senator ILIKE ?)
+              AND COALESCE(disclosure_date, transaction_date) >= ?
+            ORDER BY COALESCE(disclosure_date, transaction_date) DESC NULLS LAST
+            """,
+            [canonical, name, f"%{last_name}%", since],
+        ).fetchall()
+
+    # ── amount midpoint (reuse congress.py logic inline) ──────────────────────
+    _num_re = re.compile(r"\$?\s*([\d,]+)")
+
+    def midpoint(amount: str | None) -> float:
+        nums = [float(x.replace(",", "")) for x in _num_re.findall(amount or "") if x.replace(",", "").isdigit()]
+        if not nums:
+            return 0.0
+        return nums[0] if len(nums) == 1 else (nums[0] + nums[1]) / 2.0
+
+    def sign(tx: str) -> int:
+        t = (tx or "").lower().strip()
+        if "purchase" in t or t == "p" or t.startswith("p "):
+            return 1
+        if "sale" in t or "sell" in t or t == "s" or t.startswith("s ") or t.startswith("s ("):
+            return -1
+        return 0
+
+    trades_out = []
+    timeline: dict[str, dict[str, float]] = defaultdict(
+        lambda: {"buys": 0, "sells": 0, "buy_notional": 0.0, "sell_notional": 0.0}
+    )
+    by_ticker: dict[str, dict[str, Any]] = defaultdict(
+        lambda: {"buys": 0, "sells": 0, "buy_notional": 0.0, "sell_notional": 0.0, "last_date": None}
+    )
+    total_buys = total_sells = 0
+    buy_notional = sell_notional = 0.0
+    lags: list[int] = []
+
+    for ticker, tx_type, amount, tx_date, disc_date, asset_desc, report_url in rows:
+        s = sign(tx_type)
+        n = midpoint(amount)
+        when = disc_date or tx_date
+        month = when.strftime("%Y-%m") if when else "unknown"
+
+        if s > 0:
+            total_buys += 1
+            buy_notional += n
+            timeline[month]["buys"] += 1
+            timeline[month]["buy_notional"] += n
+            by_ticker[ticker]["buys"] += 1
+            by_ticker[ticker]["buy_notional"] += n
+        elif s < 0:
+            total_sells += 1
+            sell_notional += n
+            timeline[month]["sells"] += 1
+            timeline[month]["sell_notional"] += n
+            by_ticker[ticker]["sells"] += 1
+            by_ticker[ticker]["sell_notional"] += n
+
+        if by_ticker[ticker]["last_date"] is None or (when and when > by_ticker[ticker]["last_date"]):
+            by_ticker[ticker]["last_date"] = when
+
+        if tx_date and disc_date:
+            lag = (disc_date - tx_date).days
+            if 0 <= lag <= 365:
+                lags.append(lag)
+
+        trades_out.append({
+            "ticker": ticker,
+            "transaction_type": tx_type,
+            "amount": amount,
+            "transaction_date": tx_date.isoformat() if tx_date else None,
+            "disclosure_date": disc_date.isoformat() if disc_date else None,
+            "lag_days": (disc_date - tx_date).days if tx_date and disc_date else None,
+            "asset_description": asset_desc,
+            "report_url": report_url or "",
+        })
+
+    top_tickers = sorted(
+        [
+            {
+                "ticker": t,
+                "buys": int(v["buys"]),
+                "sells": int(v["sells"]),
+                "buy_notional": round(v["buy_notional"], 2),
+                "sell_notional": round(v["sell_notional"], 2),
+                "net_notional": round(v["buy_notional"] - v["sell_notional"], 2),
+                "last_date": v["last_date"].isoformat() if v["last_date"] else None,
+            }
+            for t, v in by_ticker.items()
+        ],
+        key=lambda r: abs(r["net_notional"]),
+        reverse=True,
+    )[:20]
+
+    timeline_out = [
+        {"month": m, **{k: round(v, 2) if isinstance(v, float) else v for k, v in vals.items()}}
+        for m, vals in sorted(timeline.items())
+        if m != "unknown"
+    ]
+
+    median_lag = int(sorted(lags)[len(lags) // 2]) if lags else None
+
+    return {
+        "banner": _BANNER,
+        "member": {
+            "name": info.get("name", name),
+            "photo_url": info.get("photo_url"),
+            "party": info.get("party", ""),
+            "state": info.get("state", ""),
+            "district": info.get("district"),
+            "chamber": info.get("chamber", ""),
+            "gender": info.get("gender", ""),
+        },
+        "totals": {
+            "trades": total_buys + total_sells,
+            "buys": total_buys,
+            "sells": total_sells,
+            "buy_notional": round(buy_notional, 2),
+            "sell_notional": round(sell_notional, 2),
+            "tickers": len(by_ticker),
+            "median_lag_days": median_lag,
+        },
+        "timeline": timeline_out,
+        "top_tickers": top_tickers,
+        "trades": trades_out,
     }
 
 
@@ -1270,8 +1454,8 @@ def _maybe_mirror() -> None:
 
         settings = load_settings()
         generate(settings.vault_dir, db_path=settings.duckdb_path)
-    except Exception:
-        pass
+    except Exception as exc:
+        log.warning("mirror: failed — %s", exc)
 
 
 # ── static frontend (must come last so API routes take precedence) ────────────
@@ -1282,7 +1466,7 @@ if _WEB_DIST.exists():
     @app.get("/{full_path:path}")
     def spa_fallback(full_path: str) -> FileResponse:
         """Serve static files from dist root when they exist, otherwise index.html."""
-        candidate = _WEB_DIST / full_path
-        if candidate.is_file():
+        candidate = (_WEB_DIST / full_path).resolve()
+        if candidate.is_relative_to(_WEB_DIST.resolve()) and candidate.is_file():
             return FileResponse(candidate)
         return FileResponse(_WEB_DIST / "index.html")

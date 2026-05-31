@@ -17,10 +17,10 @@ import {
   useTheses,
   useTickerContext,
 } from '@/lib/api'
-import type { Candidate, MarketContext, Thesis } from '@/lib/types'
+import type { Candidate, Thesis } from '@/lib/types'
 import { TickerLogo } from '@/components/ui/TickerLogo'
 import { StockModal } from '@/views/StockModal'
-import { cn, daysUntil, fmtDate, fmtPrice, fmtSignedPercent } from '@/lib/utils'
+import { cn, computeFactors, daysUntil, fmtDate, fmtPrice, fmtSignedPercent } from '@/lib/utils'
 
 // ── Bucket SVG icons ───────────────────────────────────────────────────────────
 
@@ -98,38 +98,6 @@ function IconReview({ className }: { className?: string }) {
       <circle cx="8" cy="11.5" r="0.6" fill="currentColor" stroke="none" />
     </svg>
   )
-}
-
-// ── Signal scoring ─────────────────────────────────────────────────────────────
-
-function computeFactors(thesis: Thesis, market: MarketContext | undefined) {
-  const conviction = (thesis.conviction / 5) * 40
-
-  let valueZone = 0
-  if (market?.price != null && market.week_52_high != null && market.week_52_low != null) {
-    const range = market.week_52_high - market.week_52_low
-    if (range > 0) {
-      const pos = (market.price - market.week_52_low) / range
-      valueZone = pos < 0.33 ? 25 : pos < 0.5 ? 15 : pos < 0.75 ? 5 : 0
-    }
-  }
-
-  let momentum = 0
-  if (market?.day_change_percent != null) {
-    const d = market.day_change_percent
-    momentum = d > 2 ? 20 : d > 0 ? 10 : d > -2 ? 5 : 0
-  }
-
-  const research =
-    (thesis.why_now ? 5 : 0) + (thesis.base_rate ? 5 : 0) + (thesis.pre_mortem ? 5 : 0)
-
-  return {
-    conviction,
-    valueZone,
-    momentum,
-    research,
-    total: Math.min(100, Math.round(conviction + valueZone + momentum + research)),
-  }
 }
 
 // ── Shared primitives ──────────────────────────────────────────────────────────
@@ -656,6 +624,7 @@ function SyncButton() {
   const qc = useQueryClient()
   const refresh = useRefresh()
   const [polling, setPolling] = useState(false)
+  const [lastSynced, setLastSynced] = useState<string | null>(null)
   const status = useRefreshStatus(polling)
   const running = polling && (status.data?.running ?? true)
 
@@ -667,6 +636,10 @@ function SyncButton() {
       void qc.invalidateQueries({ queryKey: ['theses'] })
       void qc.invalidateQueries({ queryKey: ['ticker-context'] })
       setPolling(false)
+      if (status.data.finished_at) {
+        const t = new Date(status.data.finished_at)
+        setLastSynced(t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }))
+      }
     }
   }, [status.data, polling, qc])
 
@@ -677,20 +650,25 @@ function SyncButton() {
     : 'starting…'
 
   return (
-    <button
-      onClick={() => { refresh.mutate(); setPolling(true) }}
-      disabled={running}
-      className={cn(
-        'num flex items-center gap-1.5 border px-3 py-1.5 text-[11px] font-semibold tracking-widest transition-colors',
-        running
-          ? 'cursor-wait border-warn/40 text-warn'
-          : 'border-cyan text-cyan hover:bg-cyan hover:text-bg',
+    <div className="flex items-center gap-2">
+      <button
+        onClick={() => { refresh.mutate(); setPolling(true) }}
+        disabled={running}
+        className={cn(
+          'num flex items-center gap-1.5 border px-3 py-1.5 text-[11px] font-semibold tracking-widest transition-colors',
+          running
+            ? 'cursor-wait border-warn/40 text-warn'
+            : 'border-cyan text-cyan hover:bg-cyan hover:text-bg',
+        )}
+        title="Re-scan the S&P 500 and pull the latest congressional filings"
+      >
+        <RefreshCw className={cn('h-3 w-3', running && 'animate-spin')} />
+        {running ? activeStep.toUpperCase() : 'SYNC DATA'}
+      </button>
+      {lastSynced && !running && (
+        <span className="num text-[10px] text-faint">synced {lastSynced}</span>
       )}
-      title="Re-scan the S&P 500 and pull the latest congressional filings"
-    >
-      <RefreshCw className={cn('h-3 w-3', running && 'animate-spin')} />
-      {running ? activeStep.toUpperCase() : 'SYNC DATA'}
-    </button>
+    </div>
   )
 }
 

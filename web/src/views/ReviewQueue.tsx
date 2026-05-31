@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 
 import { Button } from '@/components/ui/Button'
-import { Select } from '@/components/ui/Field'
+import { Select, Textarea } from '@/components/ui/Field'
 import { useRecordReview, useReviewQueue, useTheses } from '@/lib/api'
 import type { DecisionQuality, ReviewOutcome, Thesis } from '@/lib/types'
 import { cn, daysUntil, fmtDate, fmtPrice } from '@/lib/utils'
@@ -12,6 +12,7 @@ import { cn, daysUntil, fmtDate, fmtPrice } from '@/lib/utils'
 function ReviewRow({ t }: { t: Thesis }) {
   const [outcome,  setOutcome]  = useState<ReviewOutcome>('correct')
   const [quality,  setQuality]  = useState<DecisionQuality>('good')
+  const [note,     setNote]     = useState('')
   const [expanded, setExpanded] = useState(false)
   const review = useRecordReview(t.id)
   const days   = daysUntil(t.review_date)
@@ -19,7 +20,7 @@ function ReviewRow({ t }: { t: Thesis }) {
 
   function submit() {
     review.mutate(
-      { outcome, decision_quality: quality },
+      { outcome, decision_quality: quality, note: note.trim() || null },
       { onSuccess: () => setExpanded(false) },
     )
   }
@@ -104,7 +105,17 @@ function ReviewRow({ t }: { t: Thesis }) {
                   <option value="unknown">unknown</option>
                 </Select>
               </div>
-              <div className="flex gap-2">
+              <div className="flex flex-col gap-1 min-w-[200px] flex-1">
+                <span className="label">NOTE (optional)</span>
+                <Textarea
+                  value={note}
+                  onChange={e => setNote(e.target.value)}
+                  placeholder="Why this outcome? What would you do differently?"
+                  rows={2}
+                  className="text-[11px]"
+                />
+              </div>
+              <div className="flex gap-2 self-end">
                 <Button variant="primary" onClick={submit} disabled={review.isPending}>
                   {review.isPending ? 'SAVING…' : 'RECORD'}
                 </Button>

@@ -15,7 +15,7 @@ import {
   useTickerContext,
 } from '@/lib/api'
 import type { DecisionQuality, ReviewOutcome, Stance } from '@/lib/types'
-import { cn, daysUntil, fmtDate, fmtPrice, fmtSignedPercent } from '@/lib/utils'
+import { cn, daysUntil, fmtDate, fmtPrice, fmtSignedPercent, isBuy, stripTitle, txLabel } from '@/lib/utils'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -136,8 +136,16 @@ export function ThesisDetail() {
           {t.status.toUpperCase()}
         </span>
         {pending && (
-          <Button variant="primary" onClick={() => activate.mutate()} disabled={activate.isPending}>
-            ACTIVATE
+          <Button
+            variant="primary"
+            onClick={() => {
+              if (window.confirm('Activate this thesis now? The cooling-off period will end and it will become an open position.')) {
+                activate.mutate()
+              }
+            }}
+            disabled={activate.isPending}
+          >
+            {activate.isPending ? 'ACTIVATING…' : 'ACTIVATE'}
           </Button>
         )}
       </div>
@@ -322,7 +330,7 @@ export function ThesisDetail() {
         </div>
 
         {/* Right: context panel */}
-        <div className="w-[260px] shrink-0 overflow-y-auto border-l border-border bg-bg-panel">
+        <div className="hidden lg:block w-[260px] shrink-0 overflow-y-auto border-l border-border bg-bg-panel">
           <SectionLabel>POSITION</SectionLabel>
           <DataRow label="AUTHOR"    value={t.author.toUpperCase()} />
           <DataRow label="OPENED"    value={fmtDate(t.opened)} />
@@ -360,10 +368,9 @@ export function ThesisDetail() {
               <SectionLabel>CONGRESS TRADES</SectionLabel>
               {ctx.data.congress_trades.slice(0, 5).map((tr, i) => (
                 <div key={i} className="border-b border-border-dim px-5 py-2 last:border-b-0">
-                  <span className="block truncate font-sans text-[11px] text-ink">{tr.senator}</span>
-                  <span className={cn('num text-[10px]',
-                    tr.transaction_type.toLowerCase().includes('purchase') ? 'text-up' : 'text-down')}>
-                    {tr.transaction_type} · {tr.transaction_date ?? '—'}
+                  <span className="block truncate font-sans text-[11px] text-ink">{stripTitle(tr.senator)}</span>
+                  <span className={cn('num text-[10px]', isBuy(tr.transaction_type) ? 'text-up' : 'text-down')}>
+                    {txLabel(tr.transaction_type)} · {fmtDate(tr.transaction_date)}
                   </span>
                 </div>
               ))}

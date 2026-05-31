@@ -18,7 +18,7 @@ import {
   useTickerResearch,
 } from '@/lib/api'
 import type { ActivistStake, Candidate, CasePoint, CortexFactor, InsiderBuy, MarketContext, PriceBar, StockReasoning, Thesis, TickerResearch } from '@/lib/types'
-import { cn, daysUntil, fmtDate, fmtPercent, fmtPrice, fmtSignedPercent } from '@/lib/utils'
+import { cn, computeFactors, daysUntil, fmtDate, fmtPercent, fmtPrice, fmtSignedPercent, isBuy, stripTitle, txLabel } from '@/lib/utils'
 
 // ── Technical computations ─────────────────────────────────────────────────────
 
@@ -373,36 +373,6 @@ function ReturnBadge({ value }: { value: number | null }) {
 
 // ── Signal scoring (same as Dashboard) ────────────────────────────────────────
 
-function computeFactors(thesis: Thesis, market: MarketContext | undefined) {
-  const conviction = (thesis.conviction / 5) * 40
-
-  let valueZone = 0
-  if (market?.price != null && market.week_52_high != null && market.week_52_low != null) {
-    const range = market.week_52_high - market.week_52_low
-    if (range > 0) {
-      const pos = (market.price - market.week_52_low) / range
-      valueZone = pos < 0.33 ? 25 : pos < 0.5 ? 15 : pos < 0.75 ? 5 : 0
-    }
-  }
-
-  let momentum = 0
-  if (market?.day_change_percent != null) {
-    const d = market.day_change_percent
-    momentum = d > 2 ? 20 : d > 0 ? 10 : d > -2 ? 5 : 0
-  }
-
-  const research =
-    (thesis.why_now ? 5 : 0) + (thesis.base_rate ? 5 : 0) + (thesis.pre_mortem ? 5 : 0)
-
-  return {
-    conviction,
-    valueZone,
-    momentum,
-    research,
-    total: Math.min(100, Math.round(conviction + valueZone + momentum + research)),
-  }
-}
-
 // ── Tab panels ─────────────────────────────────────────────────────────────────
 
 const PERIODS = ['1mo', '3mo', '6mo', '1y'] as const
@@ -436,8 +406,16 @@ function OverviewTab({
   const rsiCtx = getRSIContext(currentRSI)
   const volCtx = getVolumeContext(bars)
 
+  if (!market && bars.length === 0) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <span className="num text-sm text-muted">LOADING MARKET DATA…</span>
+      </div>
+    )
+  }
+
   return (
-    <div className="grid grid-cols-[1fr_340px] gap-0 h-full">
+    <div className="grid h-full grid-cols-1 lg:grid-cols-[1fr_340px]">
       {/* Left column */}
       <div className="overflow-y-auto border-r border-border p-5 space-y-3">
 
@@ -529,17 +507,17 @@ function OverviewTab({
             <div className="space-y-1.5">
               {ctx.congress_trades.slice(0, 4).map((t, i) => (
                 <div key={i} className="flex items-center justify-between border-b border-border-dim pb-1.5">
-                  <span className="font-sans text-[12px] text-ink">{t.senator}</span>
+                  <span className="font-sans text-[12px] text-ink">{stripTitle(t.senator)}</span>
                   <div className="flex items-center gap-2">
                     <span className={cn(
                       'num text-[10px] font-semibold',
-                      t.transaction_type.toLowerCase().includes('purchase') ? 'text-up' : 'text-down',
+                      isBuy(t.transaction_type) ? 'text-up' : 'text-down',
                     )}>
-                      {t.transaction_type}
+                      {txLabel(t.transaction_type)}
                     </span>
                     {t.amount && <span className="num text-[10px] text-muted">{t.amount}</span>}
                     {t.transaction_date && (
-                      <span className="num text-[9px] text-faint">{t.transaction_date}</span>
+                      <span className="num text-[9px] text-faint">{fmtDate(t.transaction_date)}</span>
                     )}
                   </div>
                 </div>
@@ -952,7 +930,7 @@ function ThesisTab({
                   <span className="num text-[12px] text-ink">{fmtPrice(thesis.entry_price)}</span>
                   {pnl != null && (
                     <span className={cn('num block text-[10px]', pnl >= 0 ? 'text-up' : 'text-down')}>
-                      {pnl >= 0 ? '+' : ''}{pnl.toFixed(2)}% today
+                      {pnl >= 0 ? '+' : ''}{pnl.toFixed(2)}% vs entry
                     </span>
                   )}
                 </div>
@@ -1310,10 +1288,10 @@ function SmartMoneyPanel({ ticker }: { ticker: string }) {
           <span className="num text-[10px] tracking-widest text-warn/70">CONGRESS (last 12mo)</span>
           {trades.slice(0, 5).map((t, i) => (
             <div key={`c-${i}`} className="flex items-center justify-between border-l-2 border-warn/30 pl-2">
-              <span className="font-sans text-[11px] text-ink">{t.senator}</span>
+              <span className="font-sans text-[11px] text-ink">{stripTitle(t.senator)}</span>
               <span className="num text-[10px]">
-                <span className={t.transaction_type.toLowerCase().includes('purchase') ? 'text-up' : 'text-down'}>
-                  {t.transaction_type}
+                <span className={isBuy(t.transaction_type) ? 'text-up' : 'text-down'}>
+                  {txLabel(t.transaction_type)}
                 </span>
                 <span className="ml-2 text-muted">{t.amount}</span>
               </span>
@@ -1579,14 +1557,15 @@ export function StockModal({
           </div>
           <div className="flex items-center gap-2">
             <button
-              onClick={() =>
+              onClick={() => {
+                if (copyPrompt.isError) copyPrompt.reset()
                 copyPrompt.mutate(lead, {
                   onSuccess: () => {
                     setPromptCopied(true)
                     setTimeout(() => setPromptCopied(false), 2000)
                   },
                 })
-              }
+              }}
               disabled={copyPrompt.isPending}
               title="Copy research brief prompt for Claude"
               className={cn(
@@ -1657,7 +1636,7 @@ export function StockModal({
         </div>
 
         {/* ── Tab nav ── */}
-        <div className="flex shrink-0 items-stretch border-b border-border">
+        <div className="flex shrink-0 items-stretch overflow-x-auto border-b border-border scrollbar-none">
           {TABS.map(t => (
             <button
               key={t.id}

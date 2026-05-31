@@ -14,11 +14,13 @@ import { ChevronDown, ChevronRight, ExternalLink, HelpCircle, Landmark } from 'l
 import { useCongress, useCongressStats } from '@/lib/api'
 import type { CongressMemberStat, CongressTickerStat } from '@/lib/types'
 import { TickerLogo } from '@/components/ui/TickerLogo'
-import { cn, fmtCompact, fmtDate } from '@/lib/utils'
+import { cn, fmtCompact, fmtDate, isBuy, stripTitle } from '@/lib/utils'
 import { StockModal } from '@/views/StockModal'
+import { MemberModal } from '@/views/MemberModal'
 
 const fmtUsd = (v: number | null | undefined): string =>
   v == null || Number.isNaN(v) ? '—' : `$${fmtCompact(v)}`
+
 
 const monthLabel = (m: string): string => {
   const [y, mo] = m.split('-')
@@ -142,14 +144,16 @@ function FlowChart({ data }: { data: { month: string; buy: number; sell: number;
 
 // ── Per-ticker member drill-down (expanded row) ────────────────────────────────
 
-function TickerMembers({ ticker, days }: { ticker: string; days: number }) {
+function TickerMembers({ ticker, days, onMemberClick }: {
+  ticker: string; days: number; onMemberClick: (name: string) => void
+}) {
   const { data, isLoading } = useCongress(ticker, days)
 
   const members = useMemo(() => {
     const agg = new Map<string, { senator: string; buy: number; sell: number; count: number }>()
     for (const tr of data?.trades ?? []) {
       const m = agg.get(tr.senator) ?? { senator: tr.senator, buy: 0, sell: 0, count: 0 }
-      if (tr.transaction_type.toLowerCase().includes('purchase')) m.buy += 1
+      if (isBuy(tr.transaction_type)) m.buy += 1
       else m.sell += 1
       m.count += 1
       agg.set(tr.senator, m)
@@ -167,7 +171,12 @@ function TickerMembers({ ticker, days }: { ticker: string; days: number }) {
     <div className="grid gap-x-6 gap-y-0.5 py-2 pl-8 pr-2 sm:grid-cols-2">
       {members.map(m => (
         <div key={m.senator} className="flex items-baseline justify-between gap-2 border-b border-border-dim py-0.5">
-          <span className="truncate font-sans text-[11px] text-muted">{m.senator}</span>
+          <button
+            onClick={() => onMemberClick(m.senator)}
+            className="truncate font-sans text-[11px] text-muted hover:text-cyan hover:underline text-left"
+          >
+            {stripTitle(m.senator)}
+          </button>
           <span className="num shrink-0 text-[10px]">
             {m.buy > 0 && <span className="text-up">{m.buy} buy</span>}
             {m.buy > 0 && m.sell > 0 && <span className="text-faint"> · </span>}
@@ -201,8 +210,8 @@ function tickerSortValue(r: CongressTickerStat, k: TickerSort): number {
   }
 }
 
-function TopTickers({ rows, onPick, days }: {
-  rows: CongressTickerStat[]; onPick: (t: string) => void; days: number
+function TopTickers({ rows, onPick, onMemberClick, days }: {
+  rows: CongressTickerStat[]; onPick: (t: string) => void; onMemberClick: (name: string) => void; days: number
 }) {
   const [sortKey, setSortKey] = useState<TickerSort>('net')
   const [expanded, setExpanded] = useState<string | null>(null)
@@ -276,7 +285,7 @@ function TopTickers({ rows, onPick, days }: {
                 </span>
                 <span className="num w-7 shrink-0 text-right text-[10px] text-faint">{r.count}×</span>
               </div>
-              {isOpen && <TickerMembers ticker={r.ticker} days={days} />}
+              {isOpen && <TickerMembers ticker={r.ticker} days={days} onMemberClick={onMemberClick} />}
             </div>
           )
         })}
@@ -291,7 +300,7 @@ function MemberAvatar({ name, photoUrl }: { name: string; photoUrl: string | nul
   if (!photoUrl) {
     return (
       <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-border text-[9px] font-bold text-faint">
-        {name.replace(/^Hon\.\s*/i, '').split(' ').filter(Boolean).map(p => p[0]).slice(0, 2).join('')}
+        {stripTitle(name).split(' ').filter(Boolean).map(p => p[0]).slice(0, 2).join('')}
       </div>
     )
   }
@@ -305,7 +314,7 @@ function MemberAvatar({ name, photoUrl }: { name: string; photoUrl: string | nul
   )
 }
 
-function TopMembers({ rows }: { rows: CongressMemberStat[] }) {
+function TopMembers({ rows, onMemberClick }: { rows: CongressMemberStat[]; onMemberClick: (name: string) => void }) {
   return (
     <div className="flex flex-col">
       {rows.map(r => {
@@ -314,10 +323,17 @@ function TopMembers({ rows }: { rows: CongressMemberStat[] }) {
         return (
           <div key={r.senator} className="border-b border-border-dim py-1.5">
             <div className="flex items-center gap-2">
-              <MemberAvatar name={r.senator} photoUrl={r.photo_url ?? null} />
+              <button onClick={() => onMemberClick(r.senator)} className="shrink-0">
+                <MemberAvatar name={r.senator} photoUrl={r.photo_url ?? null} />
+              </button>
               <div className="min-w-0 flex-1">
                 <div className="flex items-baseline justify-between gap-2">
-                  <span className="truncate font-sans text-[11px] text-ink">{r.senator}</span>
+                  <button
+                    onClick={() => onMemberClick(r.senator)}
+                    className="truncate font-sans text-[11px] text-ink hover:text-cyan hover:underline text-left"
+                  >
+                    {stripTitle(r.senator)}
+                  </button>
                   <span className="num shrink-0 text-[10px] text-faint">{r.count} filings</span>
                 </div>
                 <div className="mt-1 flex h-1.5 w-full overflow-hidden bg-border/40">
@@ -380,6 +396,9 @@ export function Congress() {
   const { data, isLoading, error } = useCongressStats(days)
   const { data: feed } = useCongress(null, days)
   const [modalTicker, setModalTicker] = useState<string | null>(null)
+  const [memberModal, setMemberModal] = useState<string | null>(null)
+  const [showAllFeed, setShowAllFeed] = useState(false)
+  const FEED_LIMIT = 50
 
   const flow = useMemo(
     () =>
@@ -396,6 +415,14 @@ export function Congress() {
     return (
       <div className="flex flex-1 items-center justify-center">
         <span className="num text-sm text-muted">LOADING CONGRESSIONAL FILINGS…</span>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="flex flex-1 items-center justify-center">
+        <span className="num text-sm text-down">FAILED TO LOAD — {String(error)}</span>
       </div>
     )
   }
@@ -442,11 +469,7 @@ export function Congress() {
         ))}
       </div>
 
-      {error ? (
-        <div className="flex flex-1 items-center justify-center">
-          <span className="num text-sm text-down">FAILED TO LOAD — {String(error)}</span>
-        </div>
-      ) : !t || t.trades === 0 ? (
+      {!t || t.trades === 0 ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-2">
           <span className="num text-sm text-muted">NO CONGRESS DATA YET</span>
           <p className="max-w-xs text-center font-sans text-[12px] text-faint">
@@ -475,7 +498,7 @@ export function Congress() {
                   <span className="num text-[11px] font-semibold tracking-widest text-cyan">CONGRESS FLOW BY TICKER</span>
                   <span className="font-sans text-[10px] text-faint">net $ · buyers/sellers · ▸ expand · ticker → open</span>
                 </div>
-                <TopTickers rows={data.top_tickers} onPick={setModalTicker} days={days} />
+                <TopTickers rows={data.top_tickers} onPick={setModalTicker} onMemberClick={setMemberModal} days={days} />
               </section>
 
               <section className="border border-border bg-bg-panel p-3">
@@ -497,14 +520,15 @@ export function Congress() {
                 <span className="num text-[11px] font-semibold tracking-widest text-cyan">MOST ACTIVE MEMBERS</span>
                 <span className="font-sans text-[10px] text-faint">senate + house · by filing count · bar = buy/sell split</span>
               </div>
-              <TopMembers rows={data.top_members} />
+              <TopMembers rows={data.top_members} onMemberClick={setMemberModal} />
             </section>
 
             {/* Recent feed */}
             <section className="border border-border bg-bg-panel p-3 lg:col-span-2">
               <div className="mb-2 flex items-baseline gap-2">
                 <span className="num text-[11px] font-semibold tracking-widest text-cyan">RECENT FILINGS</span>
-                <span className="font-sans text-[10px] text-faint">{feed?.count ?? 0} most-recent disclosures</span>
+                <span className="font-sans text-[10px] text-faint">{feed?.count ?? 0} total disclosures</span>
+                <span className="font-sans text-[10px] text-faint">· amounts are mid-point of reported bracket</span>
               </div>
               <table className="w-full border-collapse">
                 <thead>
@@ -512,27 +536,30 @@ export function Congress() {
                     <th className="label px-2 py-1.5">MEMBER</th>
                     <th className="label px-2 py-1.5">TICKER</th>
                     <th className="label px-2 py-1.5">ACTION</th>
-                    <th className="label px-2 py-1.5 text-right">AMOUNT</th>
+                    <th className="label px-2 py-1.5 text-right">AMOUNT (est.)</th>
                     <th className="label px-2 py-1.5 text-right">TRADED</th>
                     <th className="label px-2 py-1.5 text-right">DISCLOSED</th>
                     <th className="label px-2 py-1.5" />
                   </tr>
                 </thead>
                 <tbody>
-                  {(feed?.trades ?? []).map((tr, i) => {
-                    const buy = tr.transaction_type.toLowerCase().includes('purchase')
+                  {(showAllFeed ? (feed?.trades ?? []) : (feed?.trades ?? []).slice(0, FEED_LIMIT)).map((tr, i) => {
+                    const buy = isBuy(tr.transaction_type)
                     return (
                       <tr key={`${tr.ticker}-${i}`} className="border-b border-border-dim hover:bg-bg-hover">
                         <td className="px-2 py-1.5">
-                          <div className="flex items-center gap-1.5">
+                          <button
+                            onClick={() => setMemberModal(tr.senator)}
+                            className="flex items-center gap-1.5 text-left"
+                          >
                             <MemberAvatar name={tr.senator} photoUrl={tr.photo_url ?? null} />
                             <div className="min-w-0">
-                              <div className="truncate font-sans text-[11px] text-muted">{tr.senator}</div>
+                              <div className="truncate font-sans text-[11px] text-muted hover:text-cyan hover:underline">{stripTitle(tr.senator)}</div>
                               <div className={cn('num text-[9px] font-semibold', tr.chamber === 'house' ? 'text-warn' : 'text-cyan')}>
                                 {tr.chamber === 'house' ? 'HOUSE' : 'SENATE'}
                               </div>
                             </div>
-                          </div>
+                          </button>
                         </td>
                         <td className="px-2 py-1.5">
                           <button
@@ -561,6 +588,14 @@ export function Congress() {
                   })}
                 </tbody>
               </table>
+              {!showAllFeed && (feed?.trades?.length ?? 0) > FEED_LIMIT && (
+                <button
+                  onClick={() => setShowAllFeed(true)}
+                  className="num mt-2 w-full border border-border py-1.5 text-[10px] text-faint hover:border-border-bright hover:text-muted transition-colors"
+                >
+                  SHOW ALL {feed?.trades?.length} FILINGS ↓
+                </button>
+              )}
             </section>
 
           </div>
@@ -568,6 +603,7 @@ export function Congress() {
       )}
 
       {modalTicker && <StockModal ticker={modalTicker} onClose={() => setModalTicker(null)} />}
+      {memberModal && <MemberModal name={memberModal} onClose={() => setMemberModal(null)} />}
     </div>
   )
 }

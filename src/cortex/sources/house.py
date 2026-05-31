@@ -45,6 +45,7 @@ _PTR_FILING_TYPE = "P"
 _POLITE_DELAY = 0.5  # seconds between PDF fetches
 
 _SKIP_TICKERS = {"", "--", "N/A", "TICKER", "NONE"}
+_MIN_TICKER_LEN = 2  # single-letter strings like "P", "S", "J" are ownership codes, not tickers
 
 # Tickers appear as "(AMZN) [ST]" or "(BRK/B)" in the Asset cell.
 # Matches 1-5 uppercase letters with optional slash + 1-2 letters (BRK/B).
@@ -242,9 +243,7 @@ def _ocr_pages_with_claude(
     import os
 
     import anthropic
-    from dotenv import load_dotenv
 
-    load_dotenv(Path(__file__).parent.parent.parent.parent / ".env", override=True)
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
         raise HouseSourceError(
@@ -281,16 +280,18 @@ def _ocr_pages_with_claude(
             )
             raw = response.content[0].text.strip()
             # Extract the JSON array robustly — Claude may wrap it in prose or
-            # code fences, and the array may start mid-response.
-            m = re.search(r"\[.*\]", raw, re.S)
-            if not m:
+            # code fences. Use first '[' to last ']' to avoid greedy over-matching
+            # on any post-array prose that itself contains brackets.
+            start = raw.find("[")
+            end = raw.rfind("]")
+            if start == -1 or end == -1 or end < start:
                 continue
-            rows = json.loads(m.group())
+            rows = json.loads(raw[start : end + 1])
             if not isinstance(rows, list):
                 continue
             for row in rows:
                 ticker = str(row.get("ticker", "")).strip().upper()
-                if not ticker or ticker in _SKIP_TICKERS:
+                if not ticker or ticker in _SKIP_TICKERS or len(ticker) < _MIN_TICKER_LEN:
                     continue
                 amount = str(row.get("amount", "")).strip()
                 if not amount:
@@ -374,6 +375,8 @@ def _parse_ptr_pdf(
                         if not m:
                             continue  # non-equity asset or description sub-row
                         ticker = m.group(1)
+                        if len(ticker) < _MIN_TICKER_LEN or ticker in _SKIP_TICKERS:
+                            continue  # ownership codes like (P), (S), (J)
 
                         amount = str(row[col_amount] or "").strip()
                         if not amount or amount in {"--", "N/A"}:
@@ -420,8 +423,6 @@ def _parse_ptr_pdf(
 
     import os
 
-    from dotenv import load_dotenv
-    load_dotenv(Path(__file__).parent.parent.parent.parent / ".env", override=True)
     if not os.environ.get("ANTHROPIC_API_KEY"):
         log.debug("House: scanned PDF skipped (ANTHROPIC_API_KEY not set): %s", report_url)
         return []

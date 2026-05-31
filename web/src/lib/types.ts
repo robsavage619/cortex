@@ -358,6 +358,52 @@ export interface CongressMemberStat {
   sell_notional: number
 }
 
+export interface CongressMemberTrade {
+  ticker: string
+  transaction_type: string
+  amount: string
+  transaction_date: string | null
+  disclosure_date: string | null
+  lag_days: number | null
+  asset_description: string
+  report_url: string
+}
+
+export interface CongressMemberTickerStat {
+  ticker: string
+  buys: number
+  sells: number
+  buy_notional: number
+  sell_notional: number
+  net_notional: number
+  last_date: string | null
+}
+
+export interface CongressMemberProfile {
+  banner: string
+  member: {
+    name: string
+    photo_url: string | null
+    party: string
+    state: string
+    district: number | null
+    chamber: string
+    gender: string
+  }
+  totals: {
+    trades: number
+    buys: number
+    sells: number
+    buy_notional: number
+    sell_notional: number
+    tickers: number
+    median_lag_days: number | null
+  }
+  timeline: { month: string; buys: number; sells: number; buy_notional: number; sell_notional: number }[]
+  top_tickers: CongressMemberTickerStat[]
+  trades: CongressMemberTrade[]
+}
+
 export interface CongressStatsResponse {
   banner: string
   days: number

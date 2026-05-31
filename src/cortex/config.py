@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass
 from pathlib import Path
+
+log = logging.getLogger(__name__)
 
 _PROJECT_ROOT = Path(__file__).parent.parent.parent
 DATA_DIR = _PROJECT_ROOT / "data"
@@ -73,6 +76,12 @@ def load_settings(
         resolved_db = env_db
     else:
         resolved_db = duckdb_path or DEFAULT_DUCKDB_PATH
+        if not duckdb_path:
+            log.warning(
+                "CORTEX_DUCKDB_PATH not set — using default %s. "
+                "On Railway set this env var to a path on a persistent volume.",
+                resolved_db,
+            )
 
     resolved_vault = vault_dir or Path(
         os.environ.get("CORTEX_VAULT_DIR", DEFAULT_VAULT_DIR)
