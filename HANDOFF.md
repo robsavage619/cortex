@@ -1,123 +1,119 @@
-# CORTEX Handoff — 2026-05-22
+# CORTEX — Handoff Document
+**Updated:** 2026-05-30  
+**Next agent:** Pick up Railway deployment — one file to delete and the app is live.
 
-## What this project is
-Savage Wall Street Tracker — a household investment **decision quality system** (not a signal feed).
-DuckDB canonical store, FastAPI backend, React portal (glass-premium), vault markdown mirror.
-**Hard rule: zero paid services.**
+---
 
-## Current state — all 42 tests passing
+## The One Thing To Do First
 
-### Done this session
-- `src/cortex/storage/db.py` — `@contextmanager connect(path, read_only)`
-- `src/cortex/storage/schemas.py` — `apply_schema()`, DDL for `schema_version`, `theses`, `reviews`, `research_chunks`
-- `src/cortex/config.py` — refactored: `DUCKDB_PATH`, `CORTEX_DUCKDB_PATH` env override, removed `financialdatasets_api_key`
-- `src/cortex/thesis.py` — CRUD (`create`, `get`, `list_theses`, `update`, `record_review`) + `ThesisError`
-- `src/cortex/calibration.py` — Brier score + hit-rate buckets via sklearn
-- `src/cortex/review.py` — `due_for_review(today)` returns open theses past review_date
-- `src/cortex/rag.py` — chunking, embedding (fastembed bge-small), DuckDB VSS HNSW index, `retrieve(query, k)`
-- `src/cortex/sources/market.py` — yfinance `context_for(ticker)` → `PriceContext`
-- `src/cortex/sources/filings.py` — edgartools `context_for(ticker)` → `FilingsContext`
-- `src/cortex/mirror.py` — `generate(vault_dir)` writes per-thesis notes + `dashboard.md`
-- `src/cortex/api.py` — FastAPI: `GET/POST /theses`, `PATCH /theses/{id}`, `POST /theses/{id}/review`, `GET /review-queue`, `GET /calibration`, `GET /context/{ticker}`
-- `src/cortex/cli.py` — `db-init`, `new`, `review`, `calibration`, `mirror`, `rag-index`, `serve`
-- `tests/` — 42 tests, all passing
-- `src/cortex/signals.py`, `src/cortex/watchlist.py`, `src/cortex/sources/financialdatasets.py` — deleted
-- `.claude/settings.json` — permission allowlist added
+**Delete `nixpacks.toml`** from the repo root. It was added to try building Node.js on Railway, but we pivoted to committing `web/dist` directly. It's still there and breaking every build.
 
-### NOT YET done
-- **ruff clean** — 6 E501 (line too long) errors remain in:
-  - `src/cortex/cli.py` lines 54, 72
-  - `src/cortex/mirror.py` line 97
-  - `src/cortex/sources/congress.py` line 77
-  - `src/cortex/sources/filings.py` lines 52, 74
-  Run `uv run ruff check src/` to see them. Fix by wrapping or shortening. Then run `uv run pyright src/`.
-- **Git commit** — nothing committed yet this session (42 modified/new files)
-- **React portal** (`web/`) — not started (Task #12)
-- **DESIGN.md** — not written
-- **cortex-decisions skill + weekly scheduled job** — not started (Task #13)
-- **Research backbone ingest** — not started (Task #13)
-
-## Next steps in order
-
-### 1. Fix ruff + commit (5 min)
 ```bash
-uv run ruff check src/   # see the 6 E501s
-# fix them (wrap long strings/raises)
-uv run ruff check src/ && uv run pyright src/ && uv run pytest
-git add -A
-git commit -m "feat: decision system core — storage, thesis CRUD, calibration, RAG, API, CLI"
+cd /Users/robsavage/Projects/savage-wall-street-tracker
+rm nixpacks.toml
+git add nixpacks.toml
+git commit -m "chore: remove nixpacks.toml — dist is committed to git"
+git push origin main
 ```
 
-### 2. Smoke-test the API
+After that push, Railway redeploys in ~30s and the app loads. Done.
+
+---
+
+## What Is This
+
+CORTEX — Rob's personal factor-model research platform. FastAPI backend + React/Vite frontend.  
+Users: Rob + wife Ari.
+
+**Live URL:** https://cortex-production-0783.up.railway.app  
+**GitHub:** https://github.com/robsavage619/cortex (branch: `main`)
+
+---
+
+## Current State (as of 2026-05-30)
+
+### Working
+- ✅ Railway service Online, healthy Python backend
+- ✅ HTTP Basic Auth (rob + ari both have logins)
+- ✅ Persistent volume at `/data` (cortex-volume) — DB survives redeploys
+- ✅ `CORTEX_AUTH_USERS`, `CORTEX_AUTH_PASS`, `CORTEX_DUCKDB_PATH`, `ANTHROPIC_API_KEY` all set in Railway Variables
+- ✅ `web/dist/` built and committed to git (commit `5789c34`) — Railway doesn't need Node.js
+
+### Broken (blocked by `nixpacks.toml`)
+- ❌ Every deploy since commit `5789c34` fails at build because `nixpacks.toml` conflicts with the Python-only Nixpacks build
+- ❌ App serves `{"detail":"Not Found"}` at `/` because the ACTIVE deployment is an older commit (before `web/dist` was committed)
+
+---
+
+## Railway Project Details
+
+| Field | Value |
+|---|---|
+| Project | pleasing-tranquility |
+| Project ID | `206f3d3c-b0ff-4228-bb76-d8b9bcb9a43e` |
+| Service ID | `122894d1-dfa3-4079-a5d3-57d2da39ca96` |
+| Environment ID | `48dd1e4a-0d84-46c6-85b3-ac954b5d86f5` |
+| Volume | cortex-volume, mounted at `/data` |
+
+### Credentials
+- **Rob:** username `rob`, password in Railway Variables (`CORTEX_AUTH_PASS`)
+- **Ari:** username `ari`, password `<REDACTED — credential rotated>`
+- Both are set via `CORTEX_AUTH_USERS` in Railway Variables
+
+---
+
+## Repo Structure
+
+```
+savage-wall-street-tracker/
+├── src/cortex/
+│   ├── api.py           # FastAPI app — auth, SPA fallback, all routes
+│   └── cli.py           # serve subcommand: --host + --port flags
+├── web/
+│   ├── src/             # React + Vite source
+│   └── dist/            # Built frontend — IN GIT (commit 5789c34)
+├── railway.json         # NIXPACKS builder, start command
+├── nixpacks.toml        # ← DELETE THIS
+└── pyproject.toml
+```
+
+### How the SPA is served (`api.py` bottom)
+```python
+_WEB_DIST = Path(__file__).parents[2] / "web" / "dist"
+# → /app/web/dist on Railway (exists because dist is in git)
+
+if _WEB_DIST.exists():
+    app.mount("/assets", StaticFiles(directory=_WEB_DIST / "assets"))
+
+    @app.get("/{full_path:path}")
+    def spa_fallback(full_path: str) -> FileResponse:
+        candidate = (_WEB_DIST / full_path).resolve()
+        if candidate.is_relative_to(_WEB_DIST.resolve()) and candidate.is_file():
+            return FileResponse(candidate)
+        return FileResponse(_WEB_DIST / "index.html")
+```
+
+---
+
+## Future: Keeping the Frontend in Sync
+
+Whenever the React source changes, rebuild before pushing:
 ```bash
-uv run cortex db-init
-uv run cortex new --ticker AAPL --author rob --conviction 3 \
-  --claim "Services margin expands to 40%" \
-  --falsifier "Two consecutive quarters below 35%" \
-  --review-date 2026-12-01
-uv run cortex mirror    # writes to $CORTEX_VAULT_DIR
-uv run cortex serve     # curl http://localhost:8000/theses
+cd web && npm run build && cd ..
+git add web/dist/
+git commit -m "chore: rebuild frontend"
+git push
 ```
 
-### 3. React portal (Task #12)
+---
+
+## Local Dev
+
 ```bash
-cd savage-wall-street-tracker
-npm create vite@latest web -- --template react-ts
-cd web
-npm install
-npm install -D tailwindcss @tailwindcss/vite
-npm install @tanstack/react-query axios lucide-react
-npm install lightweight-charts @tremor/react
-npm install framer-motion
-npx shadcn@latest init
-```
-Glass-premium tokens (from plan):
-- bg `#0A0E1A`
-- card `rgba(255,255,255,0.04)` + `backdrop-blur`
-- border `rgba(255,255,255,0.08)`
-- accent gradient `#22D3EE → #8B5CF6`
-- radius `16px`, Inter font, tabular-nums on all figures
-- logo.dev free tier for real logos (`VITE_LOGODEV_TOKEN` in `web/.env`), gradient monogram fallback
-
-Views needed: Dashboard, Thesis detail, New Thesis form, Calibration, Review queue.
-
-### 4. cortex-decisions skill + schedule (Task #13)
-Use `skill-forge` to create `~/.claude/skills/cortex-decisions.md` wrapping the CLI.
-Use `schedule` skill to set up weekly review-queue nudge.
-
-## Key file locations
-```
-src/cortex/
-├── api.py          FastAPI app
-├── calibration.py  Brier score / hit-rate
-├── cli.py          cortex CLI entrypoint
-├── config.py       Settings (DUCKDB_PATH, vault_dir)
-├── mirror.py       Vault markdown generator
-├── rag.py          fastembed + DuckDB VSS
-├── review.py       Review queue
-├── thesis.py       CRUD + ThesisError
-├── sources/
-│   ├── congress.py  Senate STOCK Act (free)
-│   ├── filings.py   edgartools / SEC (free)
-│   └── market.py    yfinance (free)
-└── storage/
-    ├── db.py        connect() context manager
-    └── schemas.py   DDL + apply_schema()
-tests/               42 tests, all passing
-web/                 (not yet created)
-data/duckdb/cortex.db   (created by db-init, gitignored)
+uv run cortex serve          # backend on :8000
+cd web && npm run dev        # frontend on :5173 (proxies API to :8000)
 ```
 
-## Commands
-```bash
-uv run cortex db-init
-uv run cortex new --ticker AAPL --author rob --conviction 3 --claim "..." --falsifier "..." --review-date 2026-12-01
-uv run cortex review
-uv run cortex calibration
-uv run cortex mirror
-uv run cortex rag-index
-uv run cortex serve [--port 8000] [--reload]
-uv run pytest
-uv run ruff check src/
-uv run pyright src/
-```
+## Original Handoff (2026-05-22)
+See git history for the full original HANDOFF.md content (task list, stack decisions, etc.).
+The React portal, ruff cleanup, and all core features were completed in that session.
