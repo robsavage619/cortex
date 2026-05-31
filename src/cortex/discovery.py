@@ -58,18 +58,36 @@ def _zscore_series(values: dict[str, float | None]) -> dict[str, float | None]:
 # ── Price-based factor computation ────────────────────────────────────────────
 
 
+# Batch size for yfinance bulk downloads. Downloading the whole S&P 500 in one
+# call builds a ~500-column float64 DataFrame whose concat peak OOM-kills a small
+# instance; 50-ticker batches keep peak memory flat and are released between batches.
+_PRICE_BATCH = 50
+
+
 def _compute_price_factors(
     tickers: list[str],
 ) -> dict[str, dict[str, Any]]:
     """Download 13 months of daily close prices and compute price-based factors.
 
-    Returns a dict keyed by ticker with keys:
+    Downloads in :data:`_PRICE_BATCH`-sized batches so peak memory stays flat
+    regardless of universe size. Returns a dict keyed by ticker with keys:
         momentum_12_1, vol_252d, sharpe_12m, above_200d_sma
     """
+    import gc
+
+    log.info("Downloading price data for %d tickers (13mo, batched)…", len(tickers))
+    results: dict[str, dict[str, Any]] = {}
+    for start in range(0, len(tickers), _PRICE_BATCH):
+        results.update(_price_factors_batch(tickers[start : start + _PRICE_BATCH]))
+        gc.collect()
+    return results
+
+
+def _price_factors_batch(tickers: list[str]) -> dict[str, dict[str, Any]]:
+    """Compute price factors for one batch of tickers (see _compute_price_factors)."""
     import numpy as np
     import yfinance as yf
 
-    log.info("Downloading price data for %d tickers (13mo)…", len(tickers))
     raw: Any = yf.download(
         tickers,
         period="13mo",
@@ -83,6 +101,9 @@ def _compute_price_factors(
         closes = raw[["Close"]].rename(columns={"Close": tickers[0]})
     else:
         closes = raw["Close"]
+    # float32 halves resident price memory; factor math tolerates it fine.
+    closes = closes.astype("float32")
+    del raw
 
     results: dict[str, dict[str, Any]] = {}
     for ticker in tickers:

@@ -50,18 +50,37 @@ class VolStock:
 # ── Metric computation ─────────────────────────────────────────────────────────
 
 
+# Batch size for yfinance bulk downloads — the swing screen spans the S&P 500 +
+# S&P 400 (~900 tickers); a single download OOM-kills a small instance. 40-ticker
+# batches (4 OHLCV fields each) keep peak memory flat and are released per batch.
+_OHLC_BATCH = 40
+
+
 def _compute_metrics(
     tickers: list[str], lookback_days: int
 ) -> dict[str, dict[str, Any]]:
     """Download recent OHLC data and compute swing-screen metrics per ticker.
 
-    Returns a dict keyed by ticker with the metric keys mirrored on
-    :class:`VolStock` (avg_dollar_range, range_consistency, oscillation_score,
-    net_drift_pct, range_position, direction_changes, avg_volume, …).
+    Downloads in :data:`_OHLC_BATCH`-sized batches so peak memory stays flat
+    regardless of universe size. Returns a dict keyed by ticker with the metric
+    keys mirrored on :class:`VolStock` (avg_dollar_range, range_consistency,
+    oscillation_score, net_drift_pct, range_position, direction_changes, …).
     """
+    import gc
+
+    log.info("Downloading 3mo OHLC for %d tickers (batched)…", len(tickers))
+    results: dict[str, dict[str, Any]] = {}
+    for start in range(0, len(tickers), _OHLC_BATCH):
+        batch = tickers[start : start + _OHLC_BATCH]
+        results.update(_metrics_batch(batch, lookback_days))
+        gc.collect()
+    return results
+
+
+def _metrics_batch(tickers: list[str], lookback_days: int) -> dict[str, dict[str, Any]]:
+    """Compute swing metrics for a single batch of tickers (see _compute_metrics)."""
     import yfinance as yf
 
-    log.info("Downloading 3mo OHLC for %d tickers…", len(tickers))
     raw: Any = yf.download(
         tickers,
         period="3mo",
@@ -83,6 +102,12 @@ def _compute_metrics(
         lows_df = raw["Low"]
         closes_df = raw["Close"]
         volumes_df = raw["Volume"]
+    # float32 halves resident memory; swing math tolerates it fine.
+    highs_df = highs_df.astype("float32")
+    lows_df = lows_df.astype("float32")
+    closes_df = closes_df.astype("float32")
+    volumes_df = volumes_df.astype("float32")
+    del raw
 
     empty = {
         "avg_dollar_range": None,
