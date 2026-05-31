@@ -231,6 +231,25 @@ def _run_refresh() -> None:
             log.warning("refresh: volatility screen failed: %s", exc)
             _refresh_state["steps"]["volatility"] = f"failed — {exc}"
 
+        # Pre-warm the market context/history cache for the top candidates so
+        # that the first user request hits the in-memory cache, not yfinance.
+        try:
+            from cortex.discovery import list_candidates
+            from cortex.sources.market import context_for, history_for
+
+            top = [c.ticker for c in list_candidates(db)[:30]]
+            log.info("refresh: pre-warming market cache for %d tickers", len(top))
+            for ticker in top:
+                try:
+                    context_for(ticker)
+                    history_for(ticker, period="3mo")
+                    history_for(ticker, period="6mo")
+                except Exception:  # noqa: BLE001 - best-effort, never block
+                    pass
+            log.info("refresh: market cache pre-warm done")
+        except Exception as exc:  # noqa: BLE001
+            log.warning("refresh: market cache pre-warm failed: %s", exc)
+
     except Exception as exc:  # noqa: BLE001 - db init or import failure
         log.exception("refresh: fatal error: %s", exc)
         _refresh_state["error"] = str(exc)

@@ -25,6 +25,10 @@ _MODEL = "BAAI/bge-small-en-v1.5"
 _CHUNK_SIZE = 400
 _CHUNK_OVERLAP = 50
 
+# Module-level singleton — loading fastembed the first time downloads ~33 MB
+# and compiles ONNX; subsequent calls reuse the cached instance.
+_EMBEDDER: Embedder | None = None
+
 
 @dataclass
 class Chunk:
@@ -36,9 +40,12 @@ class Chunk:
 
 
 def _get_embedder() -> Embedder:
-    from fastembed import TextEmbedding
+    global _EMBEDDER
+    if _EMBEDDER is None:
+        from fastembed import TextEmbedding
 
-    return cast(Embedder, TextEmbedding(model_name=_MODEL))
+        _EMBEDDER = cast(Embedder, TextEmbedding(model_name=_MODEL))
+    return _EMBEDDER
 
 
 def _chunk_text(
@@ -156,6 +163,15 @@ def retrieve(
 
     Falls back to an empty list if the VSS index is not built or no chunks exist.
     """
+    # Cheap check: if the vault has no chunks, skip model load entirely.
+    with connect(db_path, read_only=True) as conn:
+        try:
+            n = conn.execute("SELECT COUNT(*) FROM research_chunks").fetchone()
+            if n is None or n[0] == 0:
+                return []
+        except Exception:
+            return []
+
     embedder = embedder or _get_embedder()
     query_vec = [float(x) for x in next(iter(embedder.embed([query])))]
 
