@@ -45,7 +45,9 @@ _PTR_FILING_TYPE = "P"
 _POLITE_DELAY = 0.5  # seconds between PDF fetches
 
 _SKIP_TICKERS = {"", "--", "N/A", "TICKER", "NONE"}
-_MIN_TICKER_LEN = 2  # single-letter strings like "P", "S", "J" are ownership codes, not tickers
+_MIN_TICKER_LEN = (
+    2  # single-letter strings like "P", "S", "J" are ownership codes, not tickers
+)
 
 # Tickers appear as "(AMZN) [ST]" or "(BRK/B)" in the Asset cell.
 # Matches 1-5 uppercase letters with optional slash + 1-2 letters (BRK/B).
@@ -291,7 +293,11 @@ def _ocr_pages_with_claude(
                 continue
             for row in rows:
                 ticker = str(row.get("ticker", "")).strip().upper()
-                if not ticker or ticker in _SKIP_TICKERS or len(ticker) < _MIN_TICKER_LEN:
+                if (
+                    not ticker
+                    or ticker in _SKIP_TICKERS
+                    or len(ticker) < _MIN_TICKER_LEN
+                ):
                     continue
                 amount = str(row.get("amount", "")).strip()
                 if not amount:
@@ -424,7 +430,9 @@ def _parse_ptr_pdf(
     import os
 
     if not os.environ.get("ANTHROPIC_API_KEY"):
-        log.debug("House: scanned PDF skipped (ANTHROPIC_API_KEY not set): %s", report_url)
+        log.debug(
+            "House: scanned PDF skipped (ANTHROPIC_API_KEY not set): %s", report_url
+        )
         return []
 
     log.info("House: scanned PDF → OCR via Claude: %s", report_url)
@@ -446,6 +454,8 @@ def fetch_house_trades(
     years: list[int] | None = None,
     max_pdfs: int = 500,
     timeout: float = 60.0,
+    use_ocr: bool = True,
+    known_report_urls: set[str] | None = None,
 ) -> list[HouseTrade]:
     """Fetch House PTR trades for the given date window.
 
@@ -458,6 +468,10 @@ def fetch_house_trades(
         years: Year list to fetch (derived from since/until if omitted).
         max_pdfs: Hard cap on PDFs downloaded across all years.
         timeout: Per-request timeout in seconds.
+        use_ocr: When False, scanned (image-only) filings are skipped instead of
+            rendered and OCR'd via Claude. Disable on memory-constrained hosts.
+        known_report_urls: PDF URLs already stored; skipped before download so
+            re-syncs only touch new filings.
 
     Raises:
         HouseSourceError: On a fatal network failure.  Per-PDF parse failures
@@ -475,8 +489,9 @@ def fetch_house_trades(
         follow_redirects=True,
     )
 
+    known = known_report_urls or set()
     all_trades: list[HouseTrade] = []
-    pdfs_fetched = skipped_empty = parse_failures = 0
+    pdfs_fetched = skipped_empty = parse_failures = skipped_known = 0
 
     try:
         for year in years:
@@ -507,11 +522,15 @@ def fetch_house_trades(
                 disclosure_date = _parse_date(rec.get("FilingDate", ""))
                 pdf_url = _PDF_URL.format(year=year, doc_id=doc_id)
 
+                if pdf_url in known:
+                    skipped_known += 1
+                    continue
+
                 try:
                     resp = _request_with_retry(client, "GET", pdf_url, timeout=timeout)
                     pdfs_fetched += 1
                     trades = _parse_ptr_pdf(
-                        resp.content, member, pdf_url, disclosure_date
+                        resp.content, member, pdf_url, disclosure_date, use_ocr=use_ocr
                     )
                     if trades:
                         all_trades.extend(trades)
@@ -526,11 +545,13 @@ def fetch_house_trades(
         client.close()
 
     log.info(
-        "House: %d trades from %d PDFs (%d empty/scanned, %d failures)",
+        "House: %d trades from %d PDFs "
+        "(%d empty/scanned, %d failures, %d already stored)",
         len(all_trades),
         pdfs_fetched,
         skipped_empty,
         parse_failures,
+        skipped_known,
     )
     return all_trades
 
@@ -565,6 +586,23 @@ def backfill_house_trades(
 
 
 # ── persistence ───────────────────────────────────────────────────────────────
+
+
+def existing_house_report_urls(db_path: Path) -> set[str]:
+    """Return report_urls already stored for House filings.
+
+    Passed to :func:`fetch_house_trades` so re-syncs skip filings that are
+    already persisted, instead of re-downloading and re-parsing them.
+    """
+    from cortex.storage.db import connect
+
+    if not db_path.exists():
+        return set()
+    with connect(db_path) as conn:
+        rows = conn.execute(
+            "SELECT DISTINCT report_url FROM congress_trades WHERE chamber = 'house'"
+        ).fetchall()
+    return {str(r[0]) for r in rows if r and r[0]}
 
 
 def store_house_trades(trades: list[HouseTrade], db_path: Path) -> int:

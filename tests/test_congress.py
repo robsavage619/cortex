@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import datetime as dt
 
+from cortex.sources import congress
 from cortex.sources.congress import (
     CongressTrade,
     _clean_filer,
     _parse_date,
     _parse_ptr_html,
+    fetch_senate_trades,
     filter_trades,
 )
 
@@ -110,6 +112,34 @@ def test_parse_date_handles_known_formats_and_junk():
 def test_clean_filer_strips_role_suffix():
     assert _clean_filer("Fetterman, John (Senator)") == "Fetterman, John"
     assert _clean_filer("Smith, Jane (Former Senator)") == "Smith, Jane"
+
+
+def test_fetch_senate_trades_skips_known_report_urls(monkeypatch):
+    rows = [
+        ("Filer A", "/search/view/ptr/aaa/", "05/06/2026", "electronic"),
+        ("Filer B", "/search/view/ptr/bbb/", "05/07/2026", "electronic"),
+    ]
+    monkeypatch.setattr(congress, "_iter_report_rows", lambda *a, **k: rows)
+    monkeypatch.setattr(congress.time, "sleep", lambda *_: None)
+
+    fetched: list[str] = []
+
+    class _Resp:
+        text = _PTR_HTML
+
+    def _fake_get(client, method, url, **kwargs):
+        fetched.append(url)
+        return _Resp()
+
+    monkeypatch.setattr(congress, "_request_with_retry", _fake_get)
+
+    known = {f"{congress._BASE}/search/view/ptr/aaa/"}
+    trades = fetch_senate_trades(client=object(), known_report_urls=known)
+
+    # The already-stored filing (aaa) is never fetched; only bbb hits the network.
+    assert fetched == [f"{congress._BASE}/search/view/ptr/bbb/"]
+    # bbb's report yields the two stock rows from the sample HTML.
+    assert len(trades) == 2
 
 
 def test_filter_trades_by_ticker_and_window():

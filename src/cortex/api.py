@@ -42,7 +42,9 @@ def _apply_schema_on_startup() -> None:
 
 _apply_schema_on_startup()
 
-_is_production = bool(os.environ.get("RAILWAY_ENVIRONMENT") or os.environ.get("CORTEX_PRODUCTION"))
+_is_production = bool(
+    os.environ.get("RAILWAY_ENVIRONMENT") or os.environ.get("CORTEX_PRODUCTION")
+)
 
 app = FastAPI(
     title="CORTEX — factor research platform",
@@ -57,17 +59,22 @@ app = FastAPI(
 # Supports multiple users via CORTEX_AUTH_USERS="user1:pass1,user2:pass2"
 # Falls back to legacy CORTEX_AUTH_USER / CORTEX_AUTH_PASS for single-user.
 
+
 def _load_credentials() -> dict[str, str]:
     """Return {username: base64(user:pass)} for every authorised user."""
     creds: dict[str, str] = {}
     raw = os.environ.get("CORTEX_AUTH_USERS", "")
     for pair in (p.strip() for p in raw.split(",") if p.strip()):
         if ":" not in pair:
-            log.warning("startup: skipping malformed CORTEX_AUTH_USERS entry (no colon)")
+            log.warning(
+                "startup: skipping malformed CORTEX_AUTH_USERS entry (no colon)"
+            )
             continue
         user, pw = pair.split(":", 1)
         if not pw:
-            raise RuntimeError(f"CORTEX_AUTH_USERS: password for {user!r} is empty — refusing to start.")
+            raise RuntimeError(
+                f"CORTEX_AUTH_USERS: password for {user!r} is empty — refusing to start."
+            )
         creds[user] = base64.b64encode(f"{user}:{pw}".encode()).decode()
     # Legacy single-user vars
     legacy_user = os.environ.get("CORTEX_AUTH_USER")
@@ -78,7 +85,9 @@ def _load_credentials() -> dict[str, str]:
                 "CORTEX_AUTH_USER is set but CORTEX_AUTH_PASS is empty — "
                 "refusing to start with a blank password."
             )
-        creds[legacy_user] = base64.b64encode(f"{legacy_user}:{legacy_pass}".encode()).decode()
+        creds[legacy_user] = base64.b64encode(
+            f"{legacy_user}:{legacy_pass}".encode()
+        ).decode()
     return creds
 
 
@@ -146,17 +155,38 @@ _refresh_state: dict[str, Any] = {
 
 def _run_refresh() -> None:
     from cortex.discovery import run_discovery
-    from cortex.sources.congress import fetch_senate_trades, recent_window, store_trades
-    from cortex.sources.house import fetch_house_trades, store_house_trades
+    from cortex.sources.congress import (
+        existing_senate_report_urls,
+        fetch_senate_trades,
+        recent_window,
+        store_trades,
+    )
+    from cortex.sources.house import (
+        existing_house_report_urls,
+        fetch_house_trades,
+        store_house_trades,
+    )
 
     try:
         db = _db()
 
         try:
             _refresh_state["steps"]["congress"] = "running"
-            senate = fetch_senate_trades(since=recent_window(120), max_reports=400)
+            senate = fetch_senate_trades(
+                since=recent_window(120),
+                max_reports=400,
+                known_report_urls=existing_senate_report_urls(db),
+            )
             new_s = store_trades(senate, db)
-            house = fetch_house_trades(since=recent_window(120), max_pdfs=200)
+            # OCR of scanned filings is memory-heavy and slow — skip it on the
+            # server (small instance). Run a local backfill for scanned filings.
+            # Incremental skip means each sync only touches new disclosures.
+            house = fetch_house_trades(
+                since=recent_window(120),
+                max_pdfs=200,
+                use_ocr=False,
+                known_report_urls=existing_house_report_urls(db),
+            )
             new_h = store_house_trades(house, db)
             _refresh_state["steps"]["congress"] = (
                 f"done — {len(senate) + len(house)} trades ({new_s + new_h} new)"
@@ -727,7 +757,9 @@ def get_congress_member(name: str, days: int = 730) -> dict[str, Any]:
     from cortex.storage.db import connect
 
     info = member_info_for(name) or {}
-    since = __import__("datetime").date.today() - __import__("datetime").timedelta(days=days)
+    since = __import__("datetime").date.today() - __import__("datetime").timedelta(
+        days=days
+    )
 
     # The DB may store names with an "Hon." prefix (House filings) or without.
     # Try the canonical name from legislators first, then the raw query name,
@@ -752,7 +784,11 @@ def get_congress_member(name: str, days: int = 730) -> dict[str, Any]:
     _num_re = re.compile(r"\$?\s*([\d,]+)")
 
     def midpoint(amount: str | None) -> float:
-        nums = [float(x.replace(",", "")) for x in _num_re.findall(amount or "") if x.replace(",", "").isdigit()]
+        nums = [
+            float(x.replace(",", ""))
+            for x in _num_re.findall(amount or "")
+            if x.replace(",", "").isdigit()
+        ]
         if not nums:
             return 0.0
         return nums[0] if len(nums) == 1 else (nums[0] + nums[1]) / 2.0
@@ -761,7 +797,13 @@ def get_congress_member(name: str, days: int = 730) -> dict[str, Any]:
         t = (tx or "").lower().strip()
         if "purchase" in t or t == "p" or t.startswith("p "):
             return 1
-        if "sale" in t or "sell" in t or t == "s" or t.startswith("s ") or t.startswith("s ("):
+        if (
+            "sale" in t
+            or "sell" in t
+            or t == "s"
+            or t.startswith("s ")
+            or t.startswith("s (")
+        ):
             return -1
         return 0
 
@@ -770,7 +812,13 @@ def get_congress_member(name: str, days: int = 730) -> dict[str, Any]:
         lambda: {"buys": 0, "sells": 0, "buy_notional": 0.0, "sell_notional": 0.0}
     )
     by_ticker: dict[str, dict[str, Any]] = defaultdict(
-        lambda: {"buys": 0, "sells": 0, "buy_notional": 0.0, "sell_notional": 0.0, "last_date": None}
+        lambda: {
+            "buys": 0,
+            "sells": 0,
+            "buy_notional": 0.0,
+            "sell_notional": 0.0,
+            "last_date": None,
+        }
     )
     total_buys = total_sells = 0
     buy_notional = sell_notional = 0.0
@@ -797,7 +845,9 @@ def get_congress_member(name: str, days: int = 730) -> dict[str, Any]:
             by_ticker[ticker]["sells"] += 1
             by_ticker[ticker]["sell_notional"] += n
 
-        if by_ticker[ticker]["last_date"] is None or (when and when > by_ticker[ticker]["last_date"]):
+        if by_ticker[ticker]["last_date"] is None or (
+            when and when > by_ticker[ticker]["last_date"]
+        ):
             by_ticker[ticker]["last_date"] = when
 
         if tx_date and disc_date:
@@ -805,16 +855,20 @@ def get_congress_member(name: str, days: int = 730) -> dict[str, Any]:
             if 0 <= lag <= 365:
                 lags.append(lag)
 
-        trades_out.append({
-            "ticker": ticker,
-            "transaction_type": tx_type,
-            "amount": amount,
-            "transaction_date": tx_date.isoformat() if tx_date else None,
-            "disclosure_date": disc_date.isoformat() if disc_date else None,
-            "lag_days": (disc_date - tx_date).days if tx_date and disc_date else None,
-            "asset_description": asset_desc,
-            "report_url": report_url or "",
-        })
+        trades_out.append(
+            {
+                "ticker": ticker,
+                "transaction_type": tx_type,
+                "amount": amount,
+                "transaction_date": tx_date.isoformat() if tx_date else None,
+                "disclosure_date": disc_date.isoformat() if disc_date else None,
+                "lag_days": (disc_date - tx_date).days
+                if tx_date and disc_date
+                else None,
+                "asset_description": asset_desc,
+                "report_url": report_url or "",
+            }
+        )
 
     top_tickers = sorted(
         [
@@ -834,7 +888,10 @@ def get_congress_member(name: str, days: int = 730) -> dict[str, Any]:
     )[:20]
 
     timeline_out = [
-        {"month": m, **{k: round(v, 2) if isinstance(v, float) else v for k, v in vals.items()}}
+        {
+            "month": m,
+            **{k: round(v, 2) if isinstance(v, float) else v for k, v in vals.items()},
+        }
         for m, vals in sorted(timeline.items())
         if m != "unknown"
     ]

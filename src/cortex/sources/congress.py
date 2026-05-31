@@ -310,6 +310,7 @@ def fetch_senate_trades(
     max_reports: int = 250,
     timeout: float = 30.0,
     client: httpx.Client | None = None,
+    known_report_urls: set[str] | None = None,
 ) -> list[CongressTrade]:
     """Scrape Senate Periodic Transaction Reports into CongressTrade rows.
 
@@ -329,21 +330,27 @@ def fetch_senate_trades(
     owns_client = client is None
     client = client or _open_efd_session(timeout=timeout)
     try:
+        known = known_report_urls or set()
         report_rows = _iter_report_rows(client, since, until, max_reports)
         trades: list[CongressTrade] = []
         skipped_pdf = 0
+        skipped_known = 0
         parse_failures = 0
         for filer, href, filing_date, kind in report_rows:
             if kind == "paper":
                 skipped_pdf += 1
                 continue
+            report_url = f"{_BASE}{href}"
+            if report_url in known:
+                skipped_known += 1
+                continue
             try:
-                report = _request_with_retry(client, "GET", f"{_BASE}{href}")
+                report = _request_with_retry(client, "GET", report_url)
                 trades.extend(
                     _parse_ptr_html(
                         report.text,
                         filer,
-                        f"{_BASE}{href}",
+                        report_url,
                         _parse_date(filing_date),
                     )
                 )
@@ -353,11 +360,13 @@ def fetch_senate_trades(
             time.sleep(_POLITE_DELAY)
 
         log.info(
-            "eFD: %d trades from %d PTR filings (skipped %d scanned PDFs, %d failures)",
+            "eFD: %d trades from %d PTR filings "
+            "(skipped %d scanned PDFs, %d failures, %d already stored)",
             len(trades),
             len(report_rows),
             skipped_pdf,
             parse_failures,
+            skipped_known,
         )
         return trades
     finally:
@@ -435,6 +444,23 @@ def filter_trades(
 
 
 # ── persistence (DuckDB mirror) ──────────────────────────────────────────────
+
+
+def existing_senate_report_urls(db_path: Path) -> set[str]:
+    """Return report_urls already stored for Senate filings.
+
+    Passed to :func:`fetch_senate_trades` so re-syncs skip filings that are
+    already persisted, instead of re-fetching and re-parsing them.
+    """
+    from cortex.storage.db import connect
+
+    if not db_path.exists():
+        return set()
+    with connect(db_path) as conn:
+        rows = conn.execute(
+            "SELECT DISTINCT report_url FROM congress_trades WHERE chamber = 'senate'"
+        ).fetchall()
+    return {str(r[0]) for r in rows if r and r[0]}
 
 
 def store_trades(trades: list[CongressTrade], db_path: Path) -> int:
