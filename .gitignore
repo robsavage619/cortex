@@ -220,3 +220,5 @@ __marimo__/
 # DuckDB
 data/duckdb/*.db
 data/duckdb/*.wal
+!web/dist/
+!web/dist/**
