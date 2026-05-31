@@ -620,13 +620,33 @@ function CandidateCard({ candidate, onClick }: { candidate: Candidate; onClick: 
 
 // ── Sync-all-data button ───────────────────────────────────────────────────────
 
+const _LS_KEY = 'cortex:lastSynced'
+
 function SyncButton() {
   const qc = useQueryClient()
   const refresh = useRefresh()
+  const candidates = useCandidates()
   const [polling, setPolling] = useState(false)
-  const [lastSynced, setLastSynced] = useState<string | null>(null)
+  const [lastSynced, setLastSyncedState] = useState<string | null>(
+    () => localStorage.getItem(_LS_KEY),
+  )
   const status = useRefreshStatus(polling)
   const running = polling && (status.data?.running ?? true)
+
+  // Seed from DB-persisted last_run if localStorage is empty
+  useEffect(() => {
+    if (!lastSynced && candidates.data?.last_run) {
+      const t = new Date(candidates.data.last_run)
+      const label = t.toLocaleDateString([], { month: 'short', day: 'numeric' }) +
+        ' ' + t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      setLastSyncedState(label)
+    }
+  }, [candidates.data?.last_run, lastSynced])
+
+  const setLastSynced = (val: string) => {
+    localStorage.setItem(_LS_KEY, val)
+    setLastSyncedState(val)
+  }
 
   useEffect(() => {
     if (polling && status.data && !status.data.running) {
