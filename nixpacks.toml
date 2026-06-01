@@ -1,10 +1,24 @@
-# NIXPACKS auto-detects uv (we ship a uv.lock) and generates an install step:
-#   pip install uv==$NIXPACKS_UV_VERSION
-# In this Railway/NIXPACKS combo that variable is empty, so the command becomes
-# `pip install uv==` — an invalid requirement — and every build fails.
+# Railway/NIXPACKS build plan.
 #
-# This file does NOT replace the auto-detected build plan; it only supplies the
-# one missing variable so the otherwise-correct plan installs a real uv version.
-# Pin tracks the project's local uv (verified present on PyPI).
+# This is a Python app (uv) that ALSO ships a React SPA which FastAPI serves from
+# web/dist. NIXPACKS auto-detects only the Python provider (root pyproject.toml /
+# uv.lock), so we extend its plan to build the frontend during deploy — the SPA
+# is no longer committed.
+#
+# `"..."` extends the provider-generated arrays instead of replacing them, so the
+# Python toolchain from the auto-detected plan is preserved and Node is added.
+
 [variables]
+# NIXPACKS auto-detects uv and generates `pip install uv==$NIXPACKS_UV_VERSION`.
+# That variable is otherwise empty in this Railway/NIXPACKS combo, producing the
+# invalid requirement `uv==`. Pin it to a real version so install succeeds.
 NIXPACKS_UV_VERSION = "0.11.7"
+
+[phases.setup]
+# Add Node alongside the auto-detected Python packages.
+nixPkgs = ["...", "nodejs_20"]
+
+[phases.build]
+# Build the SPA after Python install. `npm ci` uses web/package-lock.json.
+dependsOn = ["install"]
+cmds = ["npm --prefix web ci", "npm --prefix web run build"]

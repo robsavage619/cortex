@@ -8,9 +8,7 @@ pnpm-debug.log*
 lerna-debug.log*
 
 node_modules
-# NOTE: web/dist IS intentionally committed — the Railway/NIXPACKS build only
-# builds Python and serves this prebuilt SPA bundle. Do not ignore it here, or
-# rebuilt assets get silently dropped from commits (root .gitignore re-includes it).
+dist
 dist-ssr
 *.local
 

@@ -19,6 +19,12 @@ All notable changes to this project are documented here. The format is based on
   so local development and testing never bill the API key. `CORTEX_ALLOW_LLM=1`
   overrides for a deliberate local run.
 
+### Changed
+- **Frontend is now built during the Railway deploy** instead of committing
+  `web/dist`. The NIXPACKS plan (`nixpacks.toml`) adds Node to the Python build and
+  runs `npm ci && npm run build`, so the served SPA can never go stale relative to
+  source. `web/dist` is no longer tracked in git.
+
 ### Added
 - **Executive-mentions signal** — organic discovery of companies named by the
   administration. Scans whitehouse.gov category RSS feeds (statements / fact-sheets /

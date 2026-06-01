@@ -24,7 +24,9 @@ subprocess on its own volume (the same OOM-safe path the "Sync" button uses).
 ## One-time setup
 
 ### 1. Web service (already deployed)
-Uses the root `railway.json`. Required env vars:
+Uses the root `railway.json` (start) and `nixpacks.toml` (build). The build adds
+Node to the Python plan and runs `npm ci && npm run build`, so the React SPA is
+compiled fresh on every deploy — `web/dist` is **not** committed. Required env vars:
 
 | Var | Purpose |
 |-----|---------|
