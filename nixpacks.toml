@@ -1,0 +1,10 @@
+# NIXPACKS auto-detects uv (we ship a uv.lock) and generates an install step:
+#   pip install uv==$NIXPACKS_UV_VERSION
+# In this Railway/NIXPACKS combo that variable is empty, so the command becomes
+# `pip install uv==` — an invalid requirement — and every build fails.
+#
+# This file does NOT replace the auto-detected build plan; it only supplies the
+# one missing variable so the otherwise-correct plan installs a real uv version.
+# Pin tracks the project's local uv (verified present on PyPI).
+[variables]
+NIXPACKS_UV_VERSION = "0.11.7"
