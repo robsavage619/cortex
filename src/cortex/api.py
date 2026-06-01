@@ -294,6 +294,24 @@ def admin_snapshot_factors() -> dict[str, Any]:
     return {"banner": _BANNER, "status": "started"}
 
 
+@app.post("/admin/sync/executive")
+def admin_sync_executive() -> dict[str, Any]:
+    """Fetch executive mentions from whitehouse.gov and store them in the DB."""
+    argv = [sys.executable, "-m", "cortex.cli", "exec-mention", "sync"]
+    try:
+        subprocess.Popen(  # noqa: S603 - fixed argv, no shell, no user input
+            argv,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+    except Exception as exc:  # noqa: BLE001 - surface spawn failure visibly
+        raise HTTPException(
+            status_code=500, detail=f"failed to start executive sync: {exc}"
+        ) from exc
+    return {"banner": _BANNER, "status": "started"}
+
+
 @app.post("/admin/backup")
 def admin_backup(keep: int = 7) -> dict[str, Any]:
     """Snapshot the DuckDB to the volume. Triggered by the weekly backup cron
