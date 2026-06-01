@@ -444,17 +444,142 @@ def _cmd_serve(args: argparse.Namespace) -> None:
     )
 
 
-def _cmd_sync_all(args: argparse.Namespace) -> None:  # noqa: ARG001
+def _cmd_sync_all(args: argparse.Namespace) -> None:
     """Run the full refresh (congress → funds → discover → volatility).
 
     Invoked as an isolated subprocess by the API so a sync OOM can't take down
-    the web server. Streams progress to the status JSON on the volume.
+    the web server. Streams progress to the status JSON on the volume. With
+    ``--only`` it runs a subset, so per-source Railway cron jobs can refresh on
+    independent cadences.
     """
     from cortex.config import load_settings
     from cortex.sync_job import run_full_sync
 
     settings = load_settings()
-    run_full_sync(settings.duckdb_path)
+    only = (
+        [s.strip() for s in args.only.split(",") if s.strip()] if args.only else None
+    )
+    run_full_sync(settings.duckdb_path, only=only)
+
+
+def _cmd_trigger_refresh(args: argparse.Namespace) -> None:
+    """POST to the running web app's /refresh so a Railway cron job can kick off
+    a sync. The cron service has no volume; the web service owns the DB and runs
+    the actual sync as its own isolated subprocess (the path /refresh already
+    drives). Reads target + credentials from env so nothing secret is in argv.
+    """
+    import os
+
+    import httpx
+
+    base = (args.url or os.environ.get("CORTEX_REFRESH_URL", "")).rstrip("/")
+    if not base:
+        print("error: pass --url or set CORTEX_REFRESH_URL", flush=True)
+        raise SystemExit(2)
+
+    params = {"only": args.only} if args.only else None
+    user = os.environ.get("CORTEX_AUTH_USER", "")
+    pw = os.environ.get("CORTEX_AUTH_PASS", "")
+    auth = (user, pw) if user else None
+
+    try:
+        resp = httpx.post(
+            f"{base}/refresh", params=params, auth=auth, timeout=30.0
+        )
+        resp.raise_for_status()
+    except httpx.HTTPError as exc:
+        print(f"trigger-refresh failed: {exc}", flush=True)
+        raise SystemExit(1) from exc
+    print(f"triggered refresh ({args.only or 'all'}) — {resp.json().get('status')}")
+
+
+def _cmd_trigger_backup(args: argparse.Namespace) -> None:
+    """POST /admin/backup on the running web app (for the weekly backup cron).
+
+    The volume-owning web process runs the actual EXPORT; the cron box only
+    fires the trigger. Mirrors trigger-refresh for credentials/target.
+    """
+    import os
+
+    import httpx
+
+    base = (args.url or os.environ.get("CORTEX_REFRESH_URL", "")).rstrip("/")
+    if not base:
+        print("error: pass --url or set CORTEX_REFRESH_URL", flush=True)
+        raise SystemExit(2)
+
+    user = os.environ.get("CORTEX_AUTH_USER", "")
+    pw = os.environ.get("CORTEX_AUTH_PASS", "")
+    auth = (user, pw) if user else None
+
+    try:
+        resp = httpx.post(
+            f"{base}/admin/backup", params={"keep": args.keep}, auth=auth, timeout=120.0
+        )
+        resp.raise_for_status()
+    except httpx.HTTPError as exc:
+        print(f"trigger-backup failed: {exc}", flush=True)
+        raise SystemExit(1) from exc
+    body = resp.json()
+    print(f"backup ok — {body.get('snapshot')} (pruned {body.get('pruned')})")
+
+
+def _cmd_snapshot_factors(args: argparse.Namespace) -> None:
+    """Run the backtest and persist each factor's t-stats with today's date.
+
+    A nightly cron snapshot builds a time series so the drift of the congress /
+    fund factors toward the t≥3.0 pre-registration bar is visible over time.
+    """
+    from datetime import date
+
+    from cortex.backtest import run_backtest
+    from cortex.config import load_settings
+    from cortex.storage.db import connect
+    from cortex.storage.schemas import apply_schema
+
+    settings = load_settings()
+    rep = run_backtest(settings.duckdb_path, start_year=args.start_year)
+    today = date.today()
+    n_months = rep.variants[0].n_months if rep.variants else None
+
+    rows = [
+        (today, f.factor, f.mean_ic, f.ic_tstat, f.ic_tstat_nw, f.coverage, n_months)
+        for f in rep.factor_ics
+    ]
+    with connect(settings.duckdb_path) as conn:
+        apply_schema(conn)
+        for r in rows:
+            conn.execute(
+                """
+                INSERT INTO factor_history
+                  (snapshot_date, factor, ic_mean, ic_tstat, ic_tstat_nw,
+                   coverage, n_months)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT (snapshot_date, factor) DO UPDATE SET
+                  ic_mean = excluded.ic_mean, ic_tstat = excluded.ic_tstat,
+                  ic_tstat_nw = excluded.ic_tstat_nw, coverage = excluded.coverage,
+                  n_months = excluded.n_months, recorded_at = CURRENT_TIMESTAMP
+                """,
+                list(r),
+            )
+    print(f"Snapshotted {len(rows)} factor t-stats for {today}")
+
+
+def _cmd_backup(args: argparse.Namespace) -> None:
+    """Export the DuckDB to a timestamped snapshot dir on the volume.
+
+    Uses DuckDB's EXPORT DATABASE (Parquet) so the snapshot is engine-portable
+    and consistent. Prunes to the newest --keep snapshots.
+    """
+    from cortex.backup import prune_backups, run_backup
+    from cortex.config import load_settings
+
+    settings = load_settings()
+    dest = run_backup(settings.duckdb_path, keep=args.keep)
+    removed = prune_backups(settings.duckdb_path, keep=args.keep)
+    print(f"Backup written to {dest}")
+    if removed:
+        print(f"Pruned {removed} old snapshot(s), keeping {args.keep}")
 
 
 def _cmd_vol_screen(args: argparse.Namespace) -> None:
@@ -669,9 +794,73 @@ def main() -> None:
     serve_p.add_argument("--port", type=int, default=8000)
     serve_p.add_argument("--reload", action="store_true")
 
-    sub.add_parser(
+    sync_all_p = sub.add_parser(
         "sync-all",
         help="Run the full data refresh (congress, funds, discover, volatility)",
+    )
+    sync_all_p.add_argument(
+        "--only",
+        default=None,
+        metavar="SOURCES",
+        help="Comma-separated subset to run (congress,funds,discover,volatility)",
+    )
+
+    trig_p = sub.add_parser(
+        "trigger-refresh",
+        help="POST /refresh on the running web app (for Railway cron services)",
+    )
+    trig_p.add_argument(
+        "--url",
+        default=None,
+        metavar="URL",
+        help="Web app base URL (default: $CORTEX_REFRESH_URL)",
+    )
+    trig_p.add_argument(
+        "--only",
+        default=None,
+        metavar="SOURCES",
+        help="Comma-separated subset to refresh (congress,funds,discover,volatility)",
+    )
+
+    snap_p = sub.add_parser(
+        "snapshot-factors",
+        help="Persist today's factor t-stats to factor_history (nightly cron)",
+    )
+    snap_p.add_argument(
+        "--start-year",
+        type=int,
+        default=2017,
+        metavar="YYYY",
+        help="First year to evaluate (default: 2017)",
+    )
+
+    backup_p = sub.add_parser(
+        "backup", help="Export the DuckDB to a timestamped snapshot on the volume"
+    )
+    backup_p.add_argument(
+        "--keep",
+        type=int,
+        default=7,
+        metavar="N",
+        help="Number of snapshots to retain (default: 7)",
+    )
+
+    trigbk_p = sub.add_parser(
+        "trigger-backup",
+        help="POST /admin/backup on the running web app (for the backup cron)",
+    )
+    trigbk_p.add_argument(
+        "--url",
+        default=None,
+        metavar="URL",
+        help="Web app base URL (default: $CORTEX_REFRESH_URL)",
+    )
+    trigbk_p.add_argument(
+        "--keep",
+        type=int,
+        default=7,
+        metavar="N",
+        help="Number of snapshots to retain (default: 7)",
     )
 
     args = parser.parse_args()
@@ -697,6 +886,10 @@ def main() -> None:
         "backtest": _cmd_backtest,
         "serve": _cmd_serve,
         "sync-all": _cmd_sync_all,
+        "trigger-refresh": _cmd_trigger_refresh,
+        "trigger-backup": _cmd_trigger_backup,
+        "snapshot-factors": _cmd_snapshot_factors,
+        "backup": _cmd_backup,
     }
     dispatch[args.command](args)
 

@@ -168,10 +168,23 @@ def _status_path() -> Path:
     return default_status_path(_db())
 
 
+_SYNC_STEPS = ("congress", "funds", "discover", "volatility")
+
+
 @app.post("/refresh")
-def refresh() -> dict[str, Any]:
-    """Spawn the full data refresh as an isolated subprocess."""
+def refresh(only: str | None = None) -> dict[str, Any]:
+    """Spawn the data refresh as an isolated subprocess.
+
+    ``only`` is an optional comma-separated subset of sync steps, used by the
+    per-source Railway cron services (e.g. ``?only=congress``). Values are
+    validated against the known step names before reaching the subprocess argv.
+    """
     from cortex.sync_job import initial_state, read_status, write_status
+
+    requested = [s.strip() for s in only.split(",")] if only else []
+    invalid = [s for s in requested if s not in _SYNC_STEPS]
+    if invalid:
+        raise HTTPException(status_code=400, detail=f"unknown sync steps: {invalid}")
 
     status_path = _status_path()
     with _refresh_lock:
@@ -181,13 +194,18 @@ def refresh() -> dict[str, Any]:
         # Seed a running status before returning so the next status poll
         # reflects the in-flight run immediately (no stale "done" flicker).
         state = initial_state()
+        if requested:
+            state["steps"] = {s: "queued" for s in _SYNC_STEPS if s in requested}
         write_status(status_path, state)
+        argv = [sys.executable, "-m", "cortex.cli", "sync-all"]
+        if requested:
+            argv += ["--only", ",".join(requested)]
         try:
             # start_new_session detaches the child so a uvicorn worker reload
             # doesn't kill an in-flight sync. It runs to completion independently
             # and reports progress through the status file.
-            subprocess.Popen(  # noqa: S603 - fixed argv, no shell, no user input
-                [sys.executable, "-m", "cortex.cli", "sync-all"],
+            subprocess.Popen(  # noqa: S603 - argv validated against _SYNC_STEPS
+                argv,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 start_new_session=True,
@@ -205,6 +223,67 @@ def refresh_status() -> dict[str, Any]:
     from cortex.sync_job import read_status
 
     return {"banner": _BANNER, **read_status(_status_path())}
+
+
+@app.get("/freshness")
+def freshness() -> dict[str, Any]:
+    """Per-source data freshness: when each source last synced and whether it's
+    stale. Powers the freshness indicator and surfaces silent cron failures."""
+    from cortex.sync_job import read_freshness
+
+    return {"banner": _BANNER, "sources": read_freshness(_db())}
+
+
+@app.get("/factor-history")
+def factor_history(factor: str | None = None) -> dict[str, Any]:
+    """Time series of factor t-stats from nightly snapshots — watch the congress
+    and fund factors drift toward the t≥3.0 pre-registration bar."""
+    from cortex.storage.db import connect
+
+    clause = "WHERE factor = ?" if factor else ""
+    params = [factor] if factor else []
+    try:
+        with connect(_db(), read_only=True) as conn:
+            rows = conn.execute(
+                f"""
+                SELECT snapshot_date, factor, ic_mean, ic_tstat, ic_tstat_nw,
+                       coverage, n_months
+                FROM factor_history {clause}
+                ORDER BY snapshot_date ASC, factor ASC
+                """,
+                params,
+            ).fetchall()
+    except Exception as exc:  # noqa: BLE001 - degrade visibly, never 500
+        return {"banner": _BANNER, "points": [], "error": str(exc)}
+    return {
+        "banner": _BANNER,
+        "points": [
+            {
+                "snapshot_date": d.isoformat(),
+                "factor": f,
+                "ic_mean": im,
+                "ic_tstat": it,
+                "ic_tstat_nw": itn,
+                "coverage": cov,
+                "n_months": n,
+            }
+            for d, f, im, it, itn, cov, n in rows
+        ],
+    }
+
+
+@app.post("/admin/backup")
+def admin_backup(keep: int = 7) -> dict[str, Any]:
+    """Snapshot the DuckDB to the volume. Triggered by the weekly backup cron
+    service (the volume-owning web process must do this, not the cron box)."""
+    from cortex.backup import prune_backups, run_backup
+
+    try:
+        dest = run_backup(_db(), keep=keep)
+        removed = prune_backups(_db(), keep=keep)
+    except Exception as exc:  # noqa: BLE001 - surface failure to the caller
+        raise HTTPException(status_code=500, detail=f"backup failed: {exc}") from exc
+    return {"banner": _BANNER, "snapshot": str(dest), "pruned": removed}
 
 
 # ── request / response models ────────────────────────────────────────────────

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import duckdb
 
-SCHEMA_VERSION = 12
+SCHEMA_VERSION = 13
 
 DDL_STATEMENTS = (
     """
@@ -174,6 +174,29 @@ DDL_STATEMENTS = (
         company_name       VARCHAR,
         max_range_pct      DOUBLE,
         max_dollar_range   DOUBLE
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS sync_runs (
+        source       VARCHAR   NOT NULL,
+        ran_at       TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        ok           BOOLEAN   NOT NULL,
+        rows_new     INTEGER,
+        detail       VARCHAR,
+        PRIMARY KEY (source, ran_at)
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS factor_history (
+        snapshot_date DATE     NOT NULL,
+        factor        VARCHAR  NOT NULL,
+        ic_mean       DOUBLE,
+        ic_tstat      DOUBLE,
+        ic_tstat_nw   DOUBLE,
+        coverage      DOUBLE,
+        n_months      INTEGER,
+        recorded_at   TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (snapshot_date, factor)
     )
     """,
 )
