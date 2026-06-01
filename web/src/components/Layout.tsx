@@ -1,8 +1,9 @@
-import { Activity, BarChart3, Landmark, LayoutDashboard, ListChecks, PlusCircle } from 'lucide-react'
+import { Activity, BarChart3, Landmark, LayoutDashboard, ListChecks, PlusCircle, Sparkles } from 'lucide-react'
 import { NavLink, Outlet } from 'react-router-dom'
 
 import { HeaderTicker } from '@/components/ui/HeaderTicker'
 import { useReviewQueue } from '@/lib/api'
+import { usePlainMode } from '@/lib/plainMode'
 import { cn } from '@/lib/utils'
 
 const nav = [
@@ -17,6 +18,7 @@ const nav = [
 export function Layout() {
   const { data: due } = useReviewQueue()
   const dueCount = due?.length ?? 0
+  const { plain, toggle } = usePlainMode()
 
   return (
     <div className="flex h-screen flex-col bg-bg font-mono text-ink">
@@ -66,8 +68,21 @@ export function Layout() {
         {/* Live portfolio ticker */}
         <HeaderTicker />
 
-        {/* Right: disclaimer */}
-        <div className="flex items-center px-4">
+        {/* Right: plain-English toggle + disclaimer */}
+        <div className="flex items-center gap-3 px-4">
+          <button
+            onClick={toggle}
+            title="Plain English — swap quant jargon (z-scores, factor codes) for plain language"
+            className={cn(
+              'flex items-center gap-1.5 rounded-sm border px-2 py-1 text-[10px] font-semibold tracking-wide transition-colors',
+              plain
+                ? 'border-cyan bg-cyan/10 text-cyan'
+                : 'border-border text-muted hover:border-cyan/40 hover:text-ink',
+            )}
+          >
+            <Sparkles className="h-3 w-3" />
+            PLAIN
+          </button>
           <span className="text-[10px] tracking-wide text-faint">
             NOT FINANCIAL ADVICE
           </span>

@@ -19,6 +19,8 @@ import {
   useTickerContext,
 } from '@/lib/api'
 import type { Candidate, Thesis } from '@/lib/types'
+import { FACTORS, plainSection, zPercentileLabel, zPhrase } from '@/lib/plain'
+import { usePlainMode } from '@/lib/plainMode'
 import { TickerLogo } from '@/components/ui/TickerLogo'
 import { StockModal } from '@/views/StockModal'
 import { cn, computeFactors, daysUntil, fmtDate, fmtPrice, fmtSignedPercent } from '@/lib/utils'
@@ -206,10 +208,11 @@ function SectionHeader({
   tone?: BucketTone
 }) {
   const { text, border } = TONE_COLORS[tone]
+  const { plain } = usePlainMode()
   return (
     <div className="flex shrink-0 items-center gap-2.5 border-b border-border bg-bg-panel px-5 py-2">
       <Icon className={cn('h-3.5 w-3.5', text)} />
-      <span className={cn('label', text)}>{label}</span>
+      <span className={cn('label', text)}>{plain ? plainSection(label) : label}</span>
       {sub && <span className="font-sans text-[10px] text-faint">{sub}</span>}
       {count !== undefined && (
         <span className="num text-[10px] text-faint">({count})</span>
@@ -495,38 +498,35 @@ function ThesisTable({
 
 // ── Factor bar (z-score visualisation) ────────────────────────────────────────
 
-const FACTOR_TOOLTIPS: Record<string, string> = {
-  MOM:  'Momentum — 12-month price trend vs. the S&P 500 universe. High = sustained outperformer.',
-  LVOL: 'Low Volatility — lower daily swings vs. peers. High = steadier ride, better risk-adjusted returns over time.',
-  SHR:  'Risk-Adjusted Return (Sharpe) — return per unit of volatility over the past 12 months. High = efficient gains.',
-  VAL:  'Value / Earnings Yield — earnings relative to price. High = cheap on fundamentals.',
-  QUAL: 'Quality / Profitability — return on equity + gross profits. High = durable business with pricing power.',
-}
-
 function FactorBar({ label, z }: { label: string; z: number | null }) {
-  const tooltip = FACTOR_TOOLTIPS[label]
+  const { plain } = usePlainMode()
+  const term = FACTORS[label]
+  const tooltip = term?.tip ?? label
+  const shownLabel = plain ? (term?.plain ?? label) : label
+  const labelWidth = plain ? 'w-[68px]' : 'w-9'
   if (z === null) {
     return (
       <div className="flex items-center gap-2">
-        <span className="w-9 font-sans text-[10px] text-muted" title={tooltip}>{label}</span>
-        <span className="num text-[10px] text-muted">—</span>
+        <span className={cn(labelWidth, 'font-sans text-[10px] text-muted')} title={tooltip}>{shownLabel}</span>
+        <span className="num text-[10px] text-muted">{plain ? zPhrase(null) : '—'}</span>
       </div>
     )
   }
   const clamped = Math.max(-3, Math.min(3, z))
   const pct = ((clamped + 3) / 6) * 100
   const fill = z >= 0.5 ? 'bg-up' : z >= -0.5 ? 'bg-warn' : 'bg-down'
+  const valueColor = z >= 0.5 ? 'text-up' : z >= -0.5 ? 'text-warn' : 'text-down'
   return (
     <div className="flex items-center gap-2" title={tooltip}>
-      <span className="w-9 font-sans text-[10px] text-muted">{label}</span>
+      <span className={cn(labelWidth, 'font-sans text-[10px] text-muted')}>{shownLabel}</span>
       <div className="relative h-1.5 w-16 rounded-sm bg-border-bright">
         <div
           className={cn('absolute inset-y-0 left-0 rounded-sm', fill)}
           style={{ width: `${pct}%` }}
         />
       </div>
-      <span className={cn('num text-[10px] font-medium', z >= 0.5 ? 'text-up' : z >= -0.5 ? 'text-warn' : 'text-down')}>
-        {z >= 0 ? '+' : ''}{z.toFixed(2)}
+      <span className={cn('text-[10px] font-medium', plain ? 'font-sans' : 'num', valueColor)}>
+        {plain ? zPhrase(z) : `${z >= 0 ? '+' : ''}${z.toFixed(2)}`}
       </span>
     </div>
   )
@@ -535,6 +535,7 @@ function FactorBar({ label, z }: { label: string; z: number | null }) {
 // ── Candidate card (DISCOVERED section) ───────────────────────────────────────
 
 function CandidateCard({ candidate, onClick }: { candidate: Candidate; onClick: () => void }) {
+  const { plain } = usePlainMode()
   const { data: ctx, isLoading } = useTickerContext(candidate.ticker)
   const { data: histData } = useHistory(candidate.ticker, '3mo')
   const market = ctx?.market
@@ -559,10 +560,12 @@ function CandidateCard({ candidate, onClick }: { candidate: Candidate; onClick: 
       <div className="absolute right-3 top-3 flex items-center gap-1">
         <span className="num text-[9px] text-faint">#{candidate.composite_rank}</span>
         <span
-          className={cn('num inline-flex items-center rounded-sm border px-1.5 py-0.5 text-[10px] font-bold tabular-nums', scoreColor)}
-          title="Composite z-score: equal-weight average of all 5 factors, expressed in standard deviations vs. the S&P 500 universe. +2σ = top ~2% of stocks."
+          className={cn('inline-flex items-center rounded-sm border px-1.5 py-0.5 text-[10px] font-bold', plain ? 'font-sans' : 'num tabular-nums', scoreColor)}
+          title="Overall rank across all 5 factors vs. the S&P 500. Shown as a z-score (standard deviations); +2σ ≈ the top 2% of stocks."
         >
-          {candidate.composite_score >= 0 ? '+' : ''}{candidate.composite_score.toFixed(2)}z
+          {plain
+            ? zPercentileLabel(candidate.composite_score)
+            : `${candidate.composite_score >= 0 ? '+' : ''}${candidate.composite_score.toFixed(2)}z`}
         </span>
       </div>
 
