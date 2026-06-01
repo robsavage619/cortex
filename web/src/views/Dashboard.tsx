@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
-import { ChevronRight, Clock, Megaphone, RefreshCw } from 'lucide-react'
+import { ChevronRight, Clock, ExternalLink, Megaphone, RefreshCw } from 'lucide-react'
 
 import { Sparkline } from '@/components/charts/Sparkline'
 import {
@@ -24,21 +24,10 @@ import { FACTORS, plainSection, zPercentileLabel, zPhrase } from '@/lib/plain'
 import { usePlainMode } from '@/lib/plainMode'
 import { TickerLogo } from '@/components/ui/TickerLogo'
 import { StockModal } from '@/views/StockModal'
-import { cn, computeFactors, daysUntil, fmtDate, fmtPrice, fmtSignedPercent } from '@/lib/utils'
+import { cn, daysUntil, fmtDate, fmtPrice, fmtSignedPercent } from '@/lib/utils'
 
 // ── Bucket SVG icons ───────────────────────────────────────────────────────────
 
-function IconStrongBuy({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 16 16" className={className} fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="8" cy="8" r="6.5" />
-      <circle cx="8" cy="8" r="2.5" />
-      {/* arrow pointing up through center */}
-      <line x1="8" y1="5.5" x2="8" y2="1" />
-      <polyline points="5.5,3.5 8,1 10.5,3.5" />
-    </svg>
-  )
-}
 
 function IconWatch({ className }: { className?: string }) {
   return (
@@ -114,20 +103,6 @@ const STATUS_DOT: Record<string, string> = {
   closed: 'bg-muted',
 }
 
-function ScorePill({ score }: { score: number }) {
-  const cls =
-    score >= 70
-      ? 'text-up bg-up/10 border-up/25'
-      : score >= 50
-        ? 'text-warn bg-warn/10 border-warn/25'
-        : 'text-muted bg-border/40 border-border'
-  return (
-    <span className={cn('num inline-flex items-center rounded-sm border px-1.5 py-0.5 text-[10px] font-bold tabular-nums', cls)}>
-      {score}
-    </span>
-  )
-}
-
 function ConvBar({ value }: { value: number }) {
   return (
     <div className="flex items-center gap-1.5">
@@ -149,38 +124,6 @@ function ConvBar({ value }: { value: number }) {
         ))}
       </div>
       <span className="num text-[10px] text-faint">{value}/5</span>
-    </div>
-  )
-}
-
-function RangeBar({
-  low,
-  high,
-  current,
-  entry,
-}: {
-  low: number
-  high: number
-  current: number
-  entry?: number | null
-}) {
-  const range = high - low
-  if (range <= 0) return null
-  const pct = Math.max(0, Math.min(100, ((current - low) / range) * 100))
-  const entryPct = entry != null ? Math.max(0, Math.min(100, ((entry - low) / range) * 100)) : null
-  return (
-    <div className="relative h-1 w-full bg-border">
-      <div className="absolute inset-y-0 left-0 bg-cyan/40" style={{ width: `${pct}%` }} />
-      {entryPct != null && (
-        <div
-          className="absolute top-1/2 h-2.5 w-px -translate-y-1/2 bg-warn"
-          style={{ left: `${entryPct}%` }}
-        />
-      )}
-      <div
-        className="absolute top-1/2 h-3 w-1 -translate-x-1/2 -translate-y-1/2 bg-cyan"
-        style={{ left: `${pct}%` }}
-      />
     </div>
   )
 }
@@ -255,117 +198,6 @@ function KpiTile({
   )
 }
 
-// ── Signal card (alpha signals section) ────────────────────────────────────────
-
-function SignalCard({ thesis, onClick }: { thesis: Thesis; onClick: () => void }) {
-  const lead = thesis.tickers[0] ?? ''
-  const { data: ctx, isLoading } = useTickerContext(lead)
-  const { data: histData } = useHistory(lead, '3mo')
-  const market = ctx?.market
-  const price = market?.price ?? null
-  const change = market?.day_change_percent ?? null
-  const up = (change ?? 0) >= 0
-  const closes = histData?.map(b => b.close) ?? []
-  const factors = computeFactors(thesis, market)
-  const pnl =
-    thesis.entry_price != null && price != null
-      ? ((price - thesis.entry_price) / thesis.entry_price) * 100
-      : null
-  const days = daysUntil(thesis.review_date)
-  const overdue = days < 0
-
-  return (
-    <button
-      onClick={onClick}
-      className="group relative flex w-[252px] shrink-0 flex-col gap-3 border border-border bg-bg-row p-4 text-left transition-all hover:border-cyan/40 hover:bg-bg-hover"
-    >
-      {/* Score top-right */}
-      <div className="absolute right-3 top-3">
-        <ScorePill score={factors.total} />
-      </div>
-
-      {/* Ticker */}
-      <div className="flex items-center gap-1.5 pr-10">
-        <span className={cn('h-1.5 w-1.5 rounded-full', STATUS_DOT[thesis.status] ?? 'bg-muted')} />
-        <span className="num text-xl font-bold text-ink">{lead}</span>
-        {thesis.tickers.length > 1 && (
-          <span className="num text-[10px] text-faint">+{thesis.tickers.slice(1).join(' ')}</span>
-        )}
-      </div>
-
-      {/* Price */}
-      <div className="flex items-baseline gap-2">
-        {isLoading ? (
-          <span className="num text-sm text-faint">loading…</span>
-        ) : price != null ? (
-          <>
-            <span className={cn('num text-[15px] font-semibold', up ? 'text-up' : 'text-down')}>
-              {fmtPrice(price)}
-            </span>
-            <span className={cn('num text-[11px]', up ? 'text-up/70' : 'text-down/70')}>
-              {fmtSignedPercent(change)}
-            </span>
-          </>
-        ) : (
-          <span className="num text-sm text-faint">—</span>
-        )}
-      </div>
-      {pnl != null && (
-        <span className={cn('num -mt-2 text-[10px]', pnl >= 0 ? 'text-up' : 'text-down')}>
-          {pnl >= 0 ? '+' : ''}{pnl.toFixed(1)}% vs entry {fmtPrice(thesis.entry_price)}
-        </span>
-      )}
-
-      {/* Sparkline */}
-      {closes.length >= 4 && (
-        <div className="border-b border-border-dim pb-3">
-          <Sparkline values={closes} width={220} height={38} />
-        </div>
-      )}
-
-      {/* Conviction */}
-      <ConvBar value={thesis.conviction} />
-
-      {/* Claim */}
-      <p className="line-clamp-2 font-sans text-[11px] leading-snug text-muted">
-        {thesis.claim}
-      </p>
-
-      {/* 52W range */}
-      {market?.week_52_low != null && market.week_52_high != null && price != null && (
-        <div className="space-y-1">
-          <RangeBar
-            low={market.week_52_low}
-            high={market.week_52_high}
-            current={price}
-            entry={thesis.entry_price}
-          />
-          <div className="flex items-center justify-between">
-            <span className="num text-[9px] text-faint">{fmtPrice(market.week_52_low)}</span>
-            <span className="num text-[9px] text-faint">52W</span>
-            <span className="num text-[9px] text-faint">{fmtPrice(market.week_52_high)}</span>
-          </div>
-        </div>
-      )}
-
-      {/* Review date */}
-      <div className="flex items-center justify-between border-t border-border-dim pt-2">
-        <span className="num text-[10px] text-faint">REVIEW {fmtDate(thesis.review_date)}</span>
-        <span
-          className={cn(
-            'num text-[10px] font-semibold',
-            overdue ? 'text-down' : days <= 7 ? 'text-warn' : 'text-faint',
-          )}
-        >
-          {overdue ? `${Math.abs(days)}d OVERDUE` : days === 0 ? 'TODAY' : `${days}d`}
-        </span>
-      </div>
-
-      {/* Hover chevron */}
-      <ChevronRight className="absolute bottom-3 right-3 h-3.5 w-3.5 text-cyan opacity-0 transition-opacity group-hover:opacity-100" />
-    </button>
-  )
-}
 
 // ── Compact thesis row ─────────────────────────────────────────────────────────
 
@@ -656,34 +488,38 @@ function ExecutiveMentionRow({
   const incidental = mention.meaningful === false
   const sig = mention.significance
 
+  const host = (() => {
+    if (!mention.source_url) return ''
+    try {
+      return new URL(mention.source_url).hostname.replace('www.', '')
+    } catch {
+      return ''
+    }
+  })()
+
   return (
-    <button
+    <div
       onClick={onClick}
       className={cn(
-        'group flex w-full items-start gap-4 border-b border-border-dim px-5 py-3.5 text-left transition-colors hover:bg-bg-hover',
-        incidental && 'opacity-55',
+        'group flex w-full cursor-pointer items-center gap-4 border-b border-border-dim px-5 py-4 transition-colors hover:bg-bg-hover',
+        incidental && 'opacity-50',
       )}
     >
       {/* Date rail */}
-      <div className="flex w-11 shrink-0 flex-col items-center pt-0.5">
+      <div className="flex w-12 shrink-0 flex-col items-center">
         <span className="num text-[9px] font-semibold tracking-wider text-faint">{month}</span>
-        <span className="num text-lg font-bold leading-none text-ink">{day}</span>
+        <span className="num text-xl font-bold leading-none text-ink">{day}</span>
       </div>
 
       {/* Logo + ticker */}
-      <div className="flex w-[88px] shrink-0 items-center gap-2 pt-0.5">
-        <TickerLogo ticker={mention.ticker} size={26} className="shrink-0" />
-        <span className="num text-sm font-bold text-ink">{mention.ticker}</span>
+      <div className="flex w-[92px] shrink-0 items-center gap-2.5">
+        <TickerLogo ticker={mention.ticker} size={30} className="shrink-0" />
+        <span className="num text-base font-bold text-ink">{mention.ticker}</span>
       </div>
 
-      {/* Quote + Haiku rationale */}
+      {/* Quote + meta */}
       <div className="min-w-0 flex-1">
-        {mention.quote && (
-          <p className="line-clamp-2 font-sans text-[12px] leading-snug text-muted">
-            “{mention.quote}”
-          </p>
-        )}
-        <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
           {sig && (
             <span
               className={cn(
@@ -700,27 +536,51 @@ function ExecutiveMentionRow({
             </span>
           )}
           {mention.analysis && (
-            <span className="font-sans text-[11px] text-faint">{mention.analysis}</span>
+            <span className="font-sans text-[11px] italic text-faint">
+              {mention.analysis}
+            </span>
           )}
         </div>
+        {mention.quote && (
+          <p className="mt-1 line-clamp-2 font-sans text-[12.5px] leading-relaxed text-muted">
+            “{mention.quote}”
+          </p>
+        )}
+        {host && (
+          <a
+            href={mention.source_url ?? '#'}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={e => e.stopPropagation()}
+            className="num mt-1.5 inline-flex items-center gap-1 text-[10px] text-faint transition-colors hover:text-cyan"
+          >
+            <ExternalLink className="h-2.5 w-2.5" />
+            {host}
+          </a>
+        )}
       </div>
 
       {/* Reaction */}
-      <div className="flex w-[92px] shrink-0 flex-col items-end pt-0.5">
+      <div className="flex w-[104px] shrink-0 flex-col items-end">
         {reaction ? (
           <>
-            <span className={cn('num text-sm font-bold', rUp ? 'text-up' : 'text-down')}>
+            <span
+              className={cn(
+                'num rounded-sm px-2 py-0.5 text-base font-bold',
+                rUp ? 'bg-up/10 text-up' : 'bg-down/10 text-down',
+              )}
+            >
               {rUp ? '+' : ''}{(reaction.pct * 100).toFixed(1)}%
             </span>
-            <span className="num text-[9px] text-faint">
-              {plain ? `${reaction.label} after` : `${reaction.label} vs SPY`}
+            <span className="num mt-1 text-[9px] text-faint">
+              {plain ? `${reaction.label} after mention` : `${reaction.label} vs SPY`}
             </span>
           </>
         ) : (
-          <span className="num text-[9px] text-faint">no move yet</span>
+          <span className="num text-[10px] text-faint">too recent</span>
         )}
       </div>
-    </button>
+    </div>
   )
 }
 
@@ -1203,10 +1063,6 @@ export function Dashboard() {
   // MONITORING   conviction ≤ 2 — active position, thesis not fully scored
   // (REVIEW NOW is cross-cutting — surfaced via the due banner + review queue)
 
-  const strongBuy = active
-    .filter(t => t.conviction >= 4)
-    .sort((a, b) => b.conviction - a.conviction)
-
   const watch = active
     .filter(t => t.conviction === 3)
     .sort((a, b) => daysUntil(a.review_date) - daysUntil(b.review_date))
@@ -1293,6 +1149,28 @@ export function Dashboard() {
           </div>
         )}
 
+        {/* ── EXECUTIVE MENTIONS (WHITE HOUSE BUZZ) ── */}
+        {mentions.length > 0 && (
+          <div>
+            <SectionHeader
+              icon={Megaphone}
+              label="EXECUTIVE MENTIONS"
+              sub="companies the White House named in statements, fact-sheets & remarks — and how the stock moved after"
+              count={mentions.length}
+              tone="watch"
+            />
+            <div className="border-b border-border">
+              {mentions.map((m, i) => (
+                <ExecutiveMentionRow
+                  key={`${m.ticker}-${m.mention_date}-${i}`}
+                  mention={m}
+                  onClick={() => setCaseTicker(m.ticker)}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* ── DISCOVERED ── */}
         <div>
           <SectionHeader
@@ -1318,28 +1196,6 @@ export function Dashboard() {
             </div>
           )}
         </div>
-
-        {/* ── EXECUTIVE MENTIONS (WHITE HOUSE BUZZ) ── */}
-        {mentions.length > 0 && (
-          <div>
-            <SectionHeader
-              icon={Megaphone}
-              label="EXECUTIVE MENTIONS"
-              sub="companies the White House named in statements, fact-sheets & remarks — and how the stock moved after"
-              count={mentions.length}
-              tone="watch"
-            />
-            <div className="border-b border-border">
-              {mentions.map((m, i) => (
-                <ExecutiveMentionRow
-                  key={`${m.ticker}-${m.mention_date}-${i}`}
-                  mention={m}
-                  onClick={() => setCaseTicker(m.ticker)}
-                />
-              ))}
-            </div>
-          </div>
-        )}
 
         {/* ── ALGO BUYS ── */}
         {algoBuys.length > 0 && (
@@ -1372,32 +1228,6 @@ export function Dashboard() {
             </div>
           </div>
         )}
-
-        {/* ── STRONG BUY ── */}
-        <div>
-          <SectionHeader
-            icon={IconStrongBuy}
-            label="STRONG BUY"
-            sub="Your hand-authored theses, conviction ≥ 4"
-            count={strongBuy.length}
-            tone="strong-buy"
-          />
-          {strongBuy.length === 0 ? (
-            <div className="flex items-center gap-3 px-5 py-5">
-              <span className="num text-[11px] text-faint">
-                No strong buys — theses with conviction ≥ 4 will appear here
-              </span>
-            </div>
-          ) : (
-            <div className="overflow-x-auto border-b border-border">
-              <div className="flex gap-3 p-4">
-                {strongBuy.map(t => (
-                  <SignalCard key={t.id} thesis={t} onClick={() => setModal(t)} />
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
 
         {/* ── WATCH ── */}
         {watch.length > 0 && (

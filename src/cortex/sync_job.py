@@ -29,7 +29,7 @@ log = logging.getLogger(__name__)
 # UI recover instead of spinning forever. A full sync takes ~5 min.
 STALE_AFTER_SECONDS = 1800
 
-_STEPS = ("congress", "funds", "discover", "volatility")
+_STEPS = ("congress", "funds", "discover", "volatility", "executive")
 
 
 def default_status_path(db_path: Path) -> Path:
@@ -314,6 +314,20 @@ def run_full_sync(
                 done("volatility", len(vol), f"done — {len(vol)} stocks")
             except Exception as exc:  # noqa: BLE001 - record and continue
                 failed("volatility", exc)
+
+        if "executive" in selected:
+            try:
+                step("executive", "running")
+                from cortex.sources.executive import fetch_mentions_whitehouse
+
+                new_mentions = fetch_mentions_whitehouse(db_path)
+                done(
+                    "executive",
+                    new_mentions,
+                    f"done — {new_mentions} new White House mentions",
+                )
+            except Exception as exc:  # noqa: BLE001 - record and continue
+                failed("executive", exc)
 
     except Exception as exc:  # noqa: BLE001 - import/db fatal
         log.exception("sync: fatal error: %s", exc)

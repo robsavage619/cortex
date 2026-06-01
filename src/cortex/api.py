@@ -168,7 +168,7 @@ def _status_path() -> Path:
     return default_status_path(_db())
 
 
-_SYNC_STEPS = ("congress", "funds", "discover", "volatility")
+_SYNC_STEPS = ("congress", "funds", "discover", "volatility", "executive")
 
 
 @app.post("/refresh")

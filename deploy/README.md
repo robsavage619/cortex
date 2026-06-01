@@ -60,7 +60,7 @@ from the **same repo**, then:
 
 | Config file | Command | Schedule | What it refreshes |
 |-------------|---------|----------|-------------------|
-| `railway.cron.daily.json` | `trigger-refresh --only congress,discover,volatility` | `0 6 * * *` daily | Congress disclosures + price-based screens |
+| `railway.cron.daily.json` | `trigger-refresh --only congress,discover,volatility,executive` | `0 6 * * *` daily | Congress disclosures, price screens + White House company mentions |
 | `railway.cron.funds.json` | `trigger-refresh --only funds` | `0 7 * * 1` Mondays | 13F institutional moves (quarterly data) |
 | `railway.cron.factors.json` | `trigger-snapshot` | `0 8 * * *` daily | Factor t-stat history snapshot |
 | `railway.cron.backup.json` | `trigger-backup --keep 7` | `0 9 * * 0` Sundays | DuckDB snapshot to the volume |
