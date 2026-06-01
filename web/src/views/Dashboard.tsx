@@ -463,6 +463,12 @@ const _SIG_STYLE: Record<string, string> = {
   low: 'border-border bg-border/30 text-faint',
 }
 
+const _ROW_SIG_STYLE: Record<string, string> = {
+  high: 'border-l-2 border-l-cyan/50 bg-cyan/[0.04]',
+  medium: 'border-l-2 border-l-warn/50 bg-warn/[0.04]',
+  low: '',
+}
+
 function reactionOf(m: ExecutiveMention): { pct: number; label: string } | null {
   if (m.abn_5d != null) return { pct: m.abn_5d, label: '5d' }
   if (m.abn_1d != null) return { pct: m.abn_1d, label: '1d' }
@@ -502,6 +508,7 @@ function ExecutiveMentionRow({
       onClick={onClick}
       className={cn(
         'group flex w-full cursor-pointer items-center gap-4 border-b border-border-dim px-5 py-4 transition-colors hover:bg-bg-hover',
+        sig && (_ROW_SIG_STYLE[sig] ?? ''),
         incidental && 'opacity-50',
       )}
     >
