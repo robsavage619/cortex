@@ -98,6 +98,10 @@ class _BasicAuthMiddleware(BaseHTTPMiddleware):
         self._tokens: list[str] = list(credentials.values())
 
     async def dispatch(self, request: Request, call_next: Any) -> Response:
+        # Railway's healthcheck sends no credentials — exempt it, or the probe
+        # 401s and Railway marks every deploy unhealthy and won't route traffic.
+        if request.url.path == "/health":
+            return await call_next(request)
         auth = request.headers.get("Authorization", "")
         token = auth[6:] if auth.startswith("Basic ") else ""
         if not any(secrets.compare_digest(token, t) for t in self._tokens):
@@ -127,6 +131,13 @@ app.add_middleware(
 )
 
 _BANNER = "Decision tool — not financial advice."
+
+
+@app.get("/health")
+def health() -> dict[str, str]:
+    """Liveness probe for Railway. Auth-exempt; no DB or network I/O so it
+    stays fast and green even while a sync is hammering the volume."""
+    return {"status": "ok"}
 
 # In-memory cache for the expensive CAR daily series (yfinance download).
 # {signal: (unix_ts, serialised_list)}
