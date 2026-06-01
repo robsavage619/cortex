@@ -1149,28 +1149,6 @@ export function Dashboard() {
           </div>
         )}
 
-        {/* ── EXECUTIVE MENTIONS (WHITE HOUSE BUZZ) ── */}
-        {mentions.length > 0 && (
-          <div>
-            <SectionHeader
-              icon={Megaphone}
-              label="EXECUTIVE MENTIONS"
-              sub="companies the White House named in statements, fact-sheets & remarks — and how the stock moved after"
-              count={mentions.length}
-              tone="watch"
-            />
-            <div className="border-b border-border">
-              {mentions.map((m, i) => (
-                <ExecutiveMentionRow
-                  key={`${m.ticker}-${m.mention_date}-${i}`}
-                  mention={m}
-                  onClick={() => setCaseTicker(m.ticker)}
-                />
-              ))}
-            </div>
-          </div>
-        )}
-
         {/* ── DISCOVERED ── */}
         <div>
           <SectionHeader
@@ -1225,6 +1203,28 @@ export function Dashboard() {
                   <CandidateCard key={c.ticker} candidate={c} onClick={() => setCaseTicker(c.ticker)} />
                 ))}
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── EXECUTIVE MENTIONS (WHITE HOUSE BUZZ) ── */}
+        {mentions.length > 0 && (
+          <div>
+            <SectionHeader
+              icon={Megaphone}
+              label="EXECUTIVE MENTIONS"
+              sub="companies the White House named in statements, fact-sheets & remarks — and how the stock moved after"
+              count={mentions.length}
+              tone="watch"
+            />
+            <div className="max-h-[420px] overflow-y-auto border-b border-border">
+              {mentions.map((m, i) => (
+                <ExecutiveMentionRow
+                  key={`${m.ticker}-${m.mention_date}-${i}`}
+                  mention={m}
+                  onClick={() => setCaseTicker(m.ticker)}
+                />
+              ))}
             </div>
           </div>
         )}
