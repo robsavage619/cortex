@@ -5,6 +5,8 @@ import logging
 import os
 import re
 import secrets
+import subprocess
+import sys
 import threading
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
@@ -139,6 +141,7 @@ def health() -> dict[str, str]:
     stays fast and green even while a sync is hammering the volume."""
     return {"status": "ok"}
 
+
 # In-memory cache for the expensive CAR daily series (yfinance download).
 # {signal: (unix_ts, serialised_list)}
 _car_series_cache: dict[str, tuple[float, list[dict[str, Any]]]] = {}
@@ -149,172 +152,59 @@ def _db() -> Path:
     return load_settings().duckdb_path
 
 
-# ── "Sync all data" background job ───────────────────────────────────────────
-# A single in-process worker refreshes congress filings + the CORTEX discovery
-# scan. Heavy work (yfinance, scraping) runs without holding a DB connection;
-# only the brief store steps open read-write, so concurrent reads stay healthy.
-
-
-def _prewarm_market_cache(db_path: Path) -> None:
-    """Warm context + history for top candidates in a low-priority daemon thread.
-
-    Runs after sync completes. Isolated from the sync thread so it doesn't
-    compete for the 1 GB memory budget on Railway.
-    """
-    import gc
-    import time
-
-    from cortex.discovery import list_candidates
-    from cortex.sources.market import MarketSourceError, context_for, history_for
-
-    try:
-        top = [c.ticker for c in list_candidates(db_path)[:30]]
-    except Exception as exc:
-        log.warning("prewarm: list_candidates failed: %s", exc)
-        return
-
-    log.info("prewarm: warming %d tickers", len(top))
-    for ticker in top:
-        try:
-            context_for(ticker)
-            history_for(ticker, period="3mo")
-        except MarketSourceError:
-            pass
-        except Exception as exc:
-            log.debug("prewarm: %s failed: %s", ticker, exc)
-        gc.collect()
-        time.sleep(0.5)  # yield — don't hammer yfinance or spike RSS
-    log.info("prewarm: done")
-
+# ── "Sync all data" job (out-of-process) ─────────────────────────────────────
+# The refresh is memory-heavy (yfinance/pandas over ~500 tickers). Running it
+# in the web process means an OOM there kills the live site. So we spawn it as
+# an isolated subprocess (`cortex sync-all`); the OS OOM-killer targets that
+# process and the server keeps serving. Status crosses the process boundary via
+# a JSON file on the volume (see cortex.sync_job).
 
 _refresh_lock = threading.Lock()
-_refresh_state: dict[str, Any] = {
-    "running": False,
-    "started_at": None,
-    "finished_at": None,
-    "steps": {},
-    "error": None,
-}
 
 
-def _run_refresh() -> None:
-    from cortex.discovery import run_discovery
-    from cortex.sources.congress import (
-        existing_senate_report_urls,
-        fetch_senate_trades,
-        recent_window,
-        store_trades,
-    )
-    from cortex.sources.house import (
-        existing_house_report_urls,
-        fetch_house_trades,
-        store_house_trades,
-    )
+def _status_path() -> Path:
+    from cortex.sync_job import default_status_path
 
-    try:
-        db = _db()
-
-        try:
-            _refresh_state["steps"]["congress"] = "running"
-            senate = fetch_senate_trades(
-                since=recent_window(120),
-                max_reports=400,
-                known_report_urls=existing_senate_report_urls(db),
-            )
-            new_s = store_trades(senate, db)
-            # OCR of scanned filings is memory-heavy and slow — skip it on the
-            # server (small instance). Run a local backfill for scanned filings.
-            # Incremental skip means each sync only touches new disclosures.
-            house = fetch_house_trades(
-                since=recent_window(120),
-                max_pdfs=200,
-                use_ocr=False,
-                known_report_urls=existing_house_report_urls(db),
-            )
-            new_h = store_house_trades(house, db)
-            _refresh_state["steps"]["congress"] = (
-                f"done — {len(senate) + len(house)} trades ({new_s + new_h} new)"
-            )
-        except Exception as exc:  # noqa: BLE001 - record and continue to discovery
-            log.warning("refresh: congress sync failed: %s", exc)
-            _refresh_state["steps"]["congress"] = f"failed — {exc}"
-
-        try:
-            _refresh_state["steps"]["funds"] = "running"
-            from cortex.sources.funds import sync_all_managers
-
-            new_funds = sync_all_managers(db)
-            _refresh_state["steps"]["funds"] = f"done — {new_funds} new moves"
-        except Exception as exc:  # noqa: BLE001 - record and continue
-            log.warning("refresh: funds sync failed: %s", exc)
-            _refresh_state["steps"]["funds"] = f"failed — {exc}"
-
-        try:
-            _refresh_state["steps"]["discover"] = "running"
-            from cortex.thesis import list_theses
-
-            active_theses = list_theses(status="open", db_path=db) + list_theses(
-                status="pending", db_path=db
-            )
-            force = list({t for thesis in active_theses for t in thesis.tickers})
-            candidates = run_discovery(db, top_n=30, force_include=force)
-            _refresh_state["steps"]["discover"] = f"done — {len(candidates)} candidates"
-        except Exception as exc:  # noqa: BLE001 - record visibly
-            log.warning("refresh: discovery failed: %s", exc)
-            _refresh_state["steps"]["discover"] = f"failed — {exc}"
-            _refresh_state["error"] = str(exc)
-
-        try:
-            _refresh_state["steps"]["volatility"] = "running"
-            from cortex.sources.universe import sp500_tickers
-            from cortex.volatility_screen import run_volatility_screen
-
-            vol = run_volatility_screen(db, tickers=sp500_tickers())
-            _refresh_state["steps"]["volatility"] = f"done — {len(vol)} stocks"
-        except Exception as exc:  # noqa: BLE001 - record and continue
-            log.warning("refresh: volatility screen failed: %s", exc)
-            _refresh_state["steps"]["volatility"] = f"failed — {exc}"
-
-        # Kick off market-cache pre-warm in a separate daemon thread so it
-        # doesn't compete with the just-completed sync for the 1 GB budget.
-        threading.Thread(target=_prewarm_market_cache, args=(db,), daemon=True).start()
-
-    except Exception as exc:  # noqa: BLE001 - db init or import failure
-        log.exception("refresh: fatal error: %s", exc)
-        _refresh_state["error"] = str(exc)
-        for step, val in _refresh_state["steps"].items():
-            if val in ("queued", "running"):
-                _refresh_state["steps"][step] = f"failed — {exc}"
-    finally:
-        _refresh_state["running"] = False
-        _refresh_state["finished_at"] = datetime.now(tz=UTC).isoformat()
+    return default_status_path(_db())
 
 
 @app.post("/refresh")
 def refresh() -> dict[str, Any]:
-    """Kick off a background refresh of congress filings + CORTEX discovery."""
+    """Spawn the full data refresh as an isolated subprocess."""
+    from cortex.sync_job import initial_state, read_status, write_status
+
+    status_path = _status_path()
     with _refresh_lock:
-        if _refresh_state["running"]:
-            return {"banner": _BANNER, "status": "already_running", **_refresh_state}
-        _refresh_state.update(
-            running=True,
-            started_at=datetime.now(tz=UTC).isoformat(),
-            finished_at=None,
-            error=None,
-            steps={
-                "congress": "queued",
-                "funds": "queued",
-                "discover": "queued",
-                "volatility": "queued",
-            },
-        )
-    threading.Thread(target=_run_refresh, daemon=True).start()
-    return {"banner": _BANNER, "status": "started", **_refresh_state}
+        current = read_status(status_path)
+        if current.get("running"):
+            return {"banner": _BANNER, "status": "already_running", **current}
+        # Seed a running status before returning so the next status poll
+        # reflects the in-flight run immediately (no stale "done" flicker).
+        state = initial_state()
+        write_status(status_path, state)
+        try:
+            # start_new_session detaches the child so a uvicorn worker reload
+            # doesn't kill an in-flight sync. It runs to completion independently
+            # and reports progress through the status file.
+            subprocess.Popen(  # noqa: S603 - fixed argv, no shell, no user input
+                [sys.executable, "-m", "cortex.cli", "sync-all"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+        except Exception as exc:  # noqa: BLE001 - surface spawn failure visibly
+            state["running"] = False
+            state["error"] = f"failed to start sync: {exc}"
+            write_status(status_path, state)
+            return {"banner": _BANNER, "status": "error", **state}
+    return {"banner": _BANNER, "status": "started", **state}
 
 
 @app.get("/refresh/status")
 def refresh_status() -> dict[str, Any]:
-    return {"banner": _BANNER, **_refresh_state}
+    from cortex.sync_job import read_status
+
+    return {"banner": _BANNER, **read_status(_status_path())}
 
 
 # ── request / response models ────────────────────────────────────────────────

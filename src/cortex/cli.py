@@ -178,7 +178,9 @@ def _cmd_house_sync(args: argparse.Namespace) -> None:
                 start_year=args.backfill_from_year,
                 progress=lambda msg: print(f"  {msg}"),
             )
-            print(f"Backfill complete — {total} new trades since {args.backfill_from_year}")
+            print(
+                f"Backfill complete — {total} new trades since {args.backfill_from_year}"
+            )
         else:
             since = date.today() - timedelta(days=args.since_days)
             log.info("Fetching House PTR filings since %s…", since)
@@ -442,6 +444,19 @@ def _cmd_serve(args: argparse.Namespace) -> None:
     )
 
 
+def _cmd_sync_all(args: argparse.Namespace) -> None:  # noqa: ARG001
+    """Run the full refresh (congress → funds → discover → volatility).
+
+    Invoked as an isolated subprocess by the API so a sync OOM can't take down
+    the web server. Streams progress to the status JSON on the volume.
+    """
+    from cortex.config import load_settings
+    from cortex.sync_job import run_full_sync
+
+    settings = load_settings()
+    run_full_sync(settings.duckdb_path)
+
+
 def _cmd_vol_screen(args: argparse.Namespace) -> None:
     from cortex.config import load_settings
     from cortex.volatility_screen import run_volatility_screen
@@ -546,7 +561,9 @@ def main() -> None:
         "persisting per 180-day window (resumable)",
     )
 
-    house_p = sub.add_parser("house-sync", help="Scrape House Clerk PTR filings into the DB")
+    house_p = sub.add_parser(
+        "house-sync", help="Scrape House Clerk PTR filings into the DB"
+    )
     house_p.add_argument(
         "--since-days",
         type=int,
@@ -652,6 +669,11 @@ def main() -> None:
     serve_p.add_argument("--port", type=int, default=8000)
     serve_p.add_argument("--reload", action="store_true")
 
+    sub.add_parser(
+        "sync-all",
+        help="Run the full data refresh (congress, funds, discover, volatility)",
+    )
+
     args = parser.parse_args()
 
     dispatch = {
@@ -674,5 +696,10 @@ def main() -> None:
         "congress-oos": _cmd_congress_oos,
         "backtest": _cmd_backtest,
         "serve": _cmd_serve,
+        "sync-all": _cmd_sync_all,
     }
     dispatch[args.command](args)
+
+
+if __name__ == "__main__":
+    main()
