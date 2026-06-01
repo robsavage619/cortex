@@ -127,6 +127,37 @@ def _wiki_tickers(url: str, table_id: str) -> list[str]:
 
 
 @lru_cache(maxsize=1)
+def sp500_names() -> dict[str, str]:
+    """Return {ticker: company name} for the S&P 500, for entity matching.
+
+    Sourced from the same Wikipedia constituents table as sp500_tickers (Symbol
+    + Security columns). Empty dict on failure — callers fall back to tickers.
+    """
+    import io
+
+    import pandas as pd
+    import requests
+
+    try:
+        resp = requests.get(
+            "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies",
+            headers={
+                "User-Agent": "Mozilla/5.0 (compatible; cortex-universe-fetch/1.0)"
+            },
+            timeout=15,
+        )
+        resp.raise_for_status()
+        table = pd.read_html(io.StringIO(resp.text), attrs={"id": "constituents"})[0]
+        return {
+            str(sym).replace(".", "-"): str(name)
+            for sym, name in zip(table["Symbol"], table["Security"], strict=False)
+        }
+    except Exception as exc:  # noqa: BLE001 - degrade to empty; matcher uses tickers
+        log.warning("Universe: S&P 500 name map fetch failed — %s", exc)
+        return {}
+
+
+@lru_cache(maxsize=1)
 def sp500_tickers() -> list[str]:
     """Return S&P 500 constituent tickers.
 

@@ -270,6 +270,14 @@ def _cmd_exec_mention(args: argparse.Namespace) -> None:
 
     settings = load_settings()
 
+    if args.action == "sync":
+        from cortex.sources.executive import fetch_mentions_gdelt
+
+        print("Discovering executive mentions from news (GDELT)…", flush=True)
+        new = fetch_mentions_gdelt(settings.duckdb_path, timespan=args.timespan)
+        print(f"Stored {new} new executive mention(s)")
+        return
+
     if args.action == "list":
         mentions = list_mentions(
             settings.duckdb_path, ticker=args.ticker, limit=args.limit
@@ -829,7 +837,12 @@ def main() -> None:
         "exec-mention",
         help="Log/list executive-branch company mentions (press-conference signal)",
     )
-    em_p.add_argument("action", choices=["add", "list"], help="add or list")
+    em_p.add_argument(
+        "action", choices=["add", "list", "sync"], help="add, list, or sync (GDELT)"
+    )
+    em_p.add_argument(
+        "--timespan", default="3m", help="GDELT lookback for sync (e.g. 1m, 3m, 1w)"
+    )
     em_p.add_argument("--ticker", help="Company ticker (required for add)")
     em_p.add_argument("--date", metavar="YYYY-MM-DD", help="Mention date (add)")
     em_p.add_argument("--speaker", default="President", help="Who said it")
