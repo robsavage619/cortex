@@ -458,6 +458,23 @@ export interface FreshnessResponse {
   sources: SourceFreshness[]
 }
 
+export interface ExecutiveMention {
+  ticker: string
+  speaker: string
+  mention_date: string
+  source_type: string
+  source_url: string | null
+  quote: string | null
+  stance: string
+}
+
+export interface ExecutiveResponse {
+  banner: string
+  ticker: string | null
+  count: number
+  mentions: ExecutiveMention[]
+}
+
 export interface FactorHistoryPoint {
   snapshot_date: string
   factor: string

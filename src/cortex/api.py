@@ -713,6 +713,24 @@ def context(ticker: str, response: Response) -> dict[str, Any]:
     except Exception as exc:  # noqa: BLE001
         result["activist_stakes_error"] = str(exc)
 
+    try:
+        from cortex.sources.executive import list_mentions
+
+        mentions = list_mentions(_db(), ticker=ticker, limit=10)
+        result["executive_mentions"] = [
+            {
+                "speaker": m.speaker,
+                "mention_date": m.mention_date.isoformat(),
+                "source_type": m.source_type,
+                "source_url": m.source_url,
+                "quote": m.quote,
+                "stance": m.stance,
+            }
+            for m in mentions
+        ]
+    except Exception as exc:  # noqa: BLE001
+        result["executive_mentions_error"] = str(exc)
+
     return result
 
 
@@ -994,6 +1012,31 @@ def get_funds(
                 "period": m.period.isoformat() if m.period else None,
             }
             for m in moves
+        ],
+    }
+
+
+@app.get("/executive")
+def get_executive(ticker: str | None = None, limit: int = 50) -> dict[str, Any]:
+    """Executive-branch company mentions — market-moving public statements."""
+    from cortex.sources.executive import list_mentions
+
+    mentions = list_mentions(_db(), ticker=ticker, limit=limit)
+    return {
+        "banner": _BANNER,
+        "ticker": ticker.upper() if ticker else None,
+        "count": len(mentions),
+        "mentions": [
+            {
+                "ticker": m.ticker,
+                "speaker": m.speaker,
+                "mention_date": m.mention_date.isoformat(),
+                "source_type": m.source_type,
+                "source_url": m.source_url,
+                "quote": m.quote,
+                "stance": m.stance,
+            }
+            for m in mentions
         ],
     }
 
@@ -1570,7 +1613,7 @@ def car_series_endpoint(signal: str) -> dict[str, Any]:
 
     from cortex.backtest import run_event_study_daily
 
-    if signal not in ("insider", "activism", "congress"):
+    if signal not in ("insider", "activism", "congress", "executive"):
         raise HTTPException(status_code=400, detail=f"Unknown signal {signal!r}")
 
     now = time.time()

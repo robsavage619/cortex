@@ -79,6 +79,7 @@ export function zPercentileLabel(z: number | null): string {
 export const SECTION_LABELS: Record<string, string> = {
   DISCOVERED: 'TOP PICKS',
   'ALGO BUYS': 'STRONG BUYS',
+  'EXECUTIVE MENTIONS': 'WHITE HOUSE BUZZ',
 }
 
 export function plainSection(label: string): string {

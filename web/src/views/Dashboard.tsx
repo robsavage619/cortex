@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
-import { ChevronRight, Clock, RefreshCw } from 'lucide-react'
+import { ChevronRight, Clock, Megaphone, RefreshCw } from 'lucide-react'
 
 import { Sparkline } from '@/components/charts/Sparkline'
 import {
@@ -9,6 +9,7 @@ import {
   useCandidates,
   useCongress,
   useCongressStats,
+  useExecutive,
   useFunds,
   useHistory,
   useFreshness,
@@ -18,7 +19,7 @@ import {
   useTheses,
   useTickerContext,
 } from '@/lib/api'
-import type { Candidate, Thesis } from '@/lib/types'
+import type { Candidate, ExecutiveMention, Thesis } from '@/lib/types'
 import { FACTORS, plainSection, zPercentileLabel, zPhrase } from '@/lib/plain'
 import { usePlainMode } from '@/lib/plainMode'
 import { TickerLogo } from '@/components/ui/TickerLogo'
@@ -622,6 +623,53 @@ function CandidateCard({ candidate, onClick }: { candidate: Candidate; onClick: 
   )
 }
 
+// ── Executive-mention card (WHITE HOUSE BUZZ section) ─────────────────────────
+
+function ExecutiveMentionCard({
+  mention,
+  onClick,
+}: {
+  mention: ExecutiveMention
+  onClick: () => void
+}) {
+  const { plain } = usePlainMode()
+  const pos = mention.stance === 'positive'
+  const neg = mention.stance === 'negative'
+  const stanceColor = pos ? 'text-up' : neg ? 'text-down' : 'text-muted'
+  const stancePlain = pos ? 'talked up' : neg ? 'talked down' : 'mentioned'
+  // Parse as a local date — `new Date('2026-05-25')` is UTC midnight and shifts
+  // back a day in western timezones.
+  const [y, mo, d] = mention.mention_date.split('-').map(Number)
+  const when = new Date(y, mo - 1, d).toLocaleDateString([], {
+    month: 'short',
+    day: 'numeric',
+  })
+  return (
+    <button
+      onClick={onClick}
+      className="group flex w-[260px] shrink-0 flex-col gap-2 border border-border-bright bg-bg-panel p-4 text-left transition-all hover:border-cyan/40 hover:bg-bg-hover"
+    >
+      <div className="flex items-center justify-between">
+        <span className="num text-base font-bold text-ink">{mention.ticker}</span>
+        <span className={cn('text-[10px] font-semibold', stanceColor)}>
+          {plain ? stancePlain : mention.stance}
+        </span>
+      </div>
+      <div className="text-[10px] text-faint">
+        {mention.speaker} · {when} · {mention.source_type.replace('_', ' ')}
+      </div>
+      {mention.quote && (
+        <p className="font-sans text-[11px] leading-snug text-muted">
+          “{mention.quote}”
+        </p>
+      )}
+      <span className="num mt-auto text-[10px] tracking-widest text-cyan/70 transition-colors group-hover:text-cyan">
+        ANALYZE →
+      </span>
+    </button>
+  )
+}
+
 // ── Sync-all-data button ───────────────────────────────────────────────────────
 
 const _LS_KEY = 'cortex:lastSynced'
@@ -1067,8 +1115,11 @@ export function Dashboard() {
   const queue = useReviewQueue()
   const cal = useCalibration()
   const candidatesQuery = useCandidates()
+  const executive = useExecutive()
   const [modal, setModal] = useState<Thesis | null>(null)
   const [caseTicker, setCaseTicker] = useState<string | null>(null)
+
+  const mentions = executive.data?.mentions ?? []
 
   const candidates = candidatesQuery.data?.candidates ?? []
   const lastRun = candidatesQuery.data?.last_run ?? null
@@ -1213,6 +1264,30 @@ export function Dashboard() {
             </div>
           )}
         </div>
+
+        {/* ── EXECUTIVE MENTIONS (WHITE HOUSE BUZZ) ── */}
+        {mentions.length > 0 && (
+          <div>
+            <SectionHeader
+              icon={Megaphone}
+              label="EXECUTIVE MENTIONS"
+              sub="companies named in administration press conferences & remarks — a market-moving statement signal"
+              count={mentions.length}
+              tone="watch"
+            />
+            <div className="overflow-x-auto border-b border-border">
+              <div className="flex gap-3 p-4">
+                {mentions.map((m, i) => (
+                  <ExecutiveMentionCard
+                    key={`${m.ticker}-${m.mention_date}-${i}`}
+                    mention={m}
+                    onClick={() => setCaseTicker(m.ticker)}
+                  />
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* ── ALGO BUYS ── */}
         {algoBuys.length > 0 && (

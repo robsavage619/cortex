@@ -16,6 +16,7 @@ import type {
   DailyCARPoint,
   Digest,
   DissentIn,
+  ExecutiveResponse,
   FactorHistoryPoint,
   FreshnessResponse,
   FundsResponse,
@@ -311,6 +312,19 @@ export function useCongressMember(name: string | null, days = 730) {
     queryFn: async () => {
       const { data } = await http.get<CongressMemberProfile>('/congress/member', {
         params: { name, days },
+      })
+      return data
+    },
+  })
+}
+
+export function useExecutive(ticker: string | null = null) {
+  return useQuery({
+    queryKey: ['executive', ticker],
+    staleTime: 5 * 60_000,
+    queryFn: async () => {
+      const { data } = await http.get<ExecutiveResponse>('/executive', {
+        params: { ticker: ticker ?? undefined, limit: 50 },
       })
       return data
     },
