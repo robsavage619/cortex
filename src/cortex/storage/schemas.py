@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import duckdb
 
-SCHEMA_VERSION = 13
+SCHEMA_VERSION = 14
 
 DDL_STATEMENTS = (
     """
@@ -184,6 +184,19 @@ DDL_STATEMENTS = (
         rows_new     INTEGER,
         detail       VARCHAR,
         PRIMARY KEY (source, ran_at)
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS executive_mentions (
+        id           VARCHAR   PRIMARY KEY,
+        ticker       VARCHAR   NOT NULL,
+        speaker      VARCHAR   NOT NULL DEFAULT 'President',
+        mention_date DATE      NOT NULL,
+        source_type  VARCHAR   NOT NULL DEFAULT 'press_conference',
+        source_url   VARCHAR,
+        quote        VARCHAR,
+        stance       VARCHAR   NOT NULL DEFAULT 'positive',
+        synced_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
     )
     """,
     """

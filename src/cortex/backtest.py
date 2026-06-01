@@ -175,6 +175,29 @@ def _load_activism_events(db_path: Path) -> list[_Event]:
     ]
 
 
+def _load_executive_events(db_path: Path) -> list[_Event]:
+    """Load executive-branch company mentions, gated on the mention date.
+
+    A positive mention is a unit buy event; negative is a unit sell. Neutral
+    mentions carry no directional weight and are dropped by the >0 filter.
+    """
+    from cortex.storage.db import connect
+
+    try:
+        with connect(db_path, read_only=True) as conn:
+            rows = conn.execute(
+                "SELECT ticker, mention_date, stance FROM executive_mentions"
+            ).fetchall()
+    except Exception:  # noqa: BLE001 - table may not exist yet
+        return []
+    sign = {"positive": 1.0, "negative": -1.0, "neutral": 0.0}
+    return [
+        _Event(ticker.upper(), mention_date, sign.get(stance, 0.0))
+        for ticker, mention_date, stance in rows
+        if mention_date is not None
+    ]
+
+
 def _load_insider_events(db_path: Path) -> list[_Event]:
     """Load Form 4 open-market purchase events (point-in-time via filing_date)."""
     from cortex.storage.db import connect
@@ -1001,9 +1024,12 @@ def run_event_study(
         all_events = _load_activism_events(db_path)
     elif signal == "congress":
         all_events = _load_congress_events(db_path)
+    elif signal == "executive":
+        all_events = _load_executive_events(db_path)
     else:
         raise ValueError(
-            f"Unknown signal {signal!r}; choose insider, activism, or congress"
+            f"Unknown signal {signal!r}; choose insider, activism, congress, "
+            "or executive"
         )
 
     events = [e for e in all_events if e.signed_weight > 0 and e.when.year >= from_year]
@@ -1123,9 +1149,12 @@ def run_event_study_daily(
         all_events = _load_activism_events(db_path)
     elif signal == "congress":
         all_events = _load_congress_events(db_path)
+    elif signal == "executive":
+        all_events = _load_executive_events(db_path)
     else:
         raise ValueError(
-            f"Unknown signal {signal!r}; choose insider, activism, or congress"
+            f"Unknown signal {signal!r}; choose insider, activism, congress, "
+            "or executive"
         )
 
     events = [e for e in all_events if e.signed_weight > 0 and e.when.year >= from_year]

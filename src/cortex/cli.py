@@ -259,6 +259,56 @@ def _cmd_fundamentals_sync(args: argparse.Namespace) -> None:  # noqa: ARG001
     print(f"Fundamentals sync complete — {new} new annual data points")
 
 
+def _cmd_exec_mention(args: argparse.Namespace) -> None:
+    from cortex.config import load_settings
+    from cortex.sources.executive import (
+        VALID_STANCES,
+        ExecutiveMention,
+        list_mentions,
+        store_mentions,
+    )
+
+    settings = load_settings()
+
+    if args.action == "list":
+        mentions = list_mentions(
+            settings.duckdb_path, ticker=args.ticker, limit=args.limit
+        )
+        if not mentions:
+            print("No executive mentions on record.")
+            return
+        print(f"{len(mentions)} executive mention(s):\n")
+        for m in mentions:
+            line = (
+                f"  [{m.mention_date}] {m.ticker:<6} {m.stance:<8} "
+                f"{m.speaker} — {m.source_type}"
+            )
+            print(line)
+            if m.quote:
+                print(f"      “{m.quote}”")
+        return
+
+    # action == "add"
+    if not args.ticker or not args.date:
+        print("add requires --ticker and --date")
+        raise SystemExit(2)
+    if args.stance not in VALID_STANCES:
+        print(f"stance must be one of {VALID_STANCES}, got {args.stance!r}")
+        raise SystemExit(2)
+    mention = ExecutiveMention(
+        ticker=args.ticker,
+        mention_date=date.fromisoformat(args.date),
+        speaker=args.speaker,
+        source_type=args.source_type,
+        source_url=args.source_url,
+        quote=args.quote,
+        stance=args.stance,
+    )
+    new = store_mentions([mention], settings.duckdb_path)
+    verb = "Logged" if new else "Updated"
+    print(f"{verb} executive mention: {mention.ticker} ({mention.mention_date})")
+
+
 def _cmd_event_study(args: argparse.Namespace) -> None:
     from cortex.backtest import run_event_study
     from cortex.config import load_settings
@@ -273,6 +323,7 @@ def _cmd_event_study(args: argparse.Namespace) -> None:
         "insider": "INSIDER  (Form 4 open-market buys)",
         "activism": "ACTIVISM  (SC 13D initial stakes)",
         "congress": "CONGRESS  (Senate/House disclosures)",
+        "executive": "EXECUTIVE  (administration company mentions)",
     }.get(args.signal, args.signal.upper())
     print()
     print("=" * 80)
@@ -774,15 +825,40 @@ def main() -> None:
     )
     sub.add_parser("fundamentals-sync", help="Sync point-in-time EDGAR fundamentals")
 
+    em_p = sub.add_parser(
+        "exec-mention",
+        help="Log/list executive-branch company mentions (press-conference signal)",
+    )
+    em_p.add_argument("action", choices=["add", "list"], help="add or list")
+    em_p.add_argument("--ticker", help="Company ticker (required for add)")
+    em_p.add_argument("--date", metavar="YYYY-MM-DD", help="Mention date (add)")
+    em_p.add_argument("--speaker", default="President", help="Who said it")
+    em_p.add_argument(
+        "--source-type",
+        dest="source_type",
+        default="press_conference",
+        help="press_conference | remarks | news | manual",
+    )
+    em_p.add_argument("--source-url", dest="source_url", help="Link to the source")
+    em_p.add_argument("--quote", help="The relevant quote")
+    em_p.add_argument(
+        "--stance",
+        default="positive",
+        help="positive | negative | neutral (default: positive)",
+    )
+    em_p.add_argument(
+        "--limit", type=int, default=100, metavar="N", help="Max rows for list"
+    )
+
     es_p = sub.add_parser(
         "event-study",
-        help="CAR event study for a filing-gated signal (insider/activism/congress)",
+        help="CAR event study for a signal (insider/activism/congress/executive)",
     )
     es_p.add_argument(
         "--signal",
         required=True,
-        choices=["insider", "activism", "congress"],
-        metavar="{insider,activism,congress}",
+        choices=["insider", "activism", "congress", "executive"],
+        metavar="{insider,activism,congress,executive}",
         help="Signal to evaluate",
     )
     es_p.add_argument(
@@ -923,6 +999,7 @@ def main() -> None:
         "funds-backfill": _cmd_funds_backfill,
         "insiders-sync": _cmd_insiders_sync,
         "activism-sync": _cmd_activism_sync,
+        "exec-mention": _cmd_exec_mention,
         "fundamentals-sync": _cmd_fundamentals_sync,
         "event-study": _cmd_event_study,
         "congress-oos": _cmd_congress_oos,
