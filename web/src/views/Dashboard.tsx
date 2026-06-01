@@ -625,7 +625,20 @@ function CandidateCard({ candidate, onClick }: { candidate: Candidate; onClick: 
 
 // ── Executive-mention card (WHITE HOUSE BUZZ section) ─────────────────────────
 
-function ExecutiveMentionCard({
+const _SIG_STYLE: Record<string, string> = {
+  high: 'border-cyan/40 bg-cyan/10 text-cyan',
+  medium: 'border-warn/40 bg-warn/10 text-warn',
+  low: 'border-border bg-border/30 text-faint',
+}
+
+function reactionOf(m: ExecutiveMention): { pct: number; label: string } | null {
+  if (m.abn_5d != null) return { pct: m.abn_5d, label: '5d' }
+  if (m.abn_1d != null) return { pct: m.abn_1d, label: '1d' }
+  if (m.abn_20d != null) return { pct: m.abn_20d, label: '20d' }
+  return null
+}
+
+function ExecutiveMentionRow({
   mention,
   onClick,
 }: {
@@ -633,39 +646,80 @@ function ExecutiveMentionCard({
   onClick: () => void
 }) {
   const { plain } = usePlainMode()
-  const pos = mention.stance === 'positive'
-  const neg = mention.stance === 'negative'
-  const stanceColor = pos ? 'text-up' : neg ? 'text-down' : 'text-muted'
-  const stancePlain = pos ? 'talked up' : neg ? 'talked down' : 'mentioned'
-  // Parse as a local date — `new Date('2026-05-25')` is UTC midnight and shifts
-  // back a day in western timezones.
   const [y, mo, d] = mention.mention_date.split('-').map(Number)
-  const when = new Date(y, mo - 1, d).toLocaleDateString([], {
-    month: 'short',
-    day: 'numeric',
-  })
+  const dt = new Date(y, mo - 1, d)
+  const month = dt.toLocaleDateString([], { month: 'short' }).toUpperCase()
+  const day = dt.toLocaleDateString([], { day: 'numeric' })
+
+  const reaction = reactionOf(mention)
+  const rUp = (reaction?.pct ?? 0) >= 0
+  const incidental = mention.meaningful === false
+  const sig = mention.significance
+
   return (
     <button
       onClick={onClick}
-      className="group flex w-[260px] shrink-0 flex-col gap-2 border border-border-bright bg-bg-panel p-4 text-left transition-all hover:border-cyan/40 hover:bg-bg-hover"
-    >
-      <div className="flex items-center justify-between">
-        <span className="num text-base font-bold text-ink">{mention.ticker}</span>
-        <span className={cn('text-[10px] font-semibold', stanceColor)}>
-          {plain ? stancePlain : mention.stance}
-        </span>
-      </div>
-      <div className="text-[10px] text-faint">
-        {mention.speaker} · {when} · {mention.source_type.replace('_', ' ')}
-      </div>
-      {mention.quote && (
-        <p className="font-sans text-[11px] leading-snug text-muted">
-          “{mention.quote}”
-        </p>
+      className={cn(
+        'group flex w-full items-start gap-4 border-b border-border-dim px-5 py-3.5 text-left transition-colors hover:bg-bg-hover',
+        incidental && 'opacity-55',
       )}
-      <span className="num mt-auto text-[10px] tracking-widest text-cyan/70 transition-colors group-hover:text-cyan">
-        ANALYZE →
-      </span>
+    >
+      {/* Date rail */}
+      <div className="flex w-11 shrink-0 flex-col items-center pt-0.5">
+        <span className="num text-[9px] font-semibold tracking-wider text-faint">{month}</span>
+        <span className="num text-lg font-bold leading-none text-ink">{day}</span>
+      </div>
+
+      {/* Logo + ticker */}
+      <div className="flex w-[88px] shrink-0 items-center gap-2 pt-0.5">
+        <TickerLogo ticker={mention.ticker} size={26} className="shrink-0" />
+        <span className="num text-sm font-bold text-ink">{mention.ticker}</span>
+      </div>
+
+      {/* Quote + Haiku rationale */}
+      <div className="min-w-0 flex-1">
+        {mention.quote && (
+          <p className="line-clamp-2 font-sans text-[12px] leading-snug text-muted">
+            “{mention.quote}”
+          </p>
+        )}
+        <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
+          {sig && (
+            <span
+              className={cn(
+                'num rounded-sm border px-1.5 py-px text-[9px] font-semibold uppercase tracking-wide',
+                _SIG_STYLE[sig] ?? _SIG_STYLE.low,
+              )}
+            >
+              {plain ? `${sig} impact` : `${sig} sig`}
+            </span>
+          )}
+          {incidental && (
+            <span className="num text-[9px] uppercase tracking-wide text-faint">
+              incidental
+            </span>
+          )}
+          {mention.analysis && (
+            <span className="font-sans text-[11px] text-faint">{mention.analysis}</span>
+          )}
+        </div>
+      </div>
+
+      {/* Reaction */}
+      <div className="flex w-[92px] shrink-0 flex-col items-end pt-0.5">
+        {reaction ? (
+          <>
+            <span className={cn('num text-sm font-bold', rUp ? 'text-up' : 'text-down')}>
+              {rUp ? '+' : ''}{(reaction.pct * 100).toFixed(1)}%
+            </span>
+            <span className="num text-[9px] text-faint">
+              {plain ? `${reaction.label} after` : `${reaction.label} vs SPY`}
+            </span>
+          </>
+        ) : (
+          <span className="num text-[9px] text-faint">no move yet</span>
+        )}
+      </div>
     </button>
   )
 }
@@ -1271,20 +1325,18 @@ export function Dashboard() {
             <SectionHeader
               icon={Megaphone}
               label="EXECUTIVE MENTIONS"
-              sub="companies named in administration press conferences & remarks — a market-moving statement signal"
+              sub="companies the White House named in statements, fact-sheets & remarks — and how the stock moved after"
               count={mentions.length}
               tone="watch"
             />
-            <div className="overflow-x-auto border-b border-border">
-              <div className="flex gap-3 p-4">
-                {mentions.map((m, i) => (
-                  <ExecutiveMentionCard
-                    key={`${m.ticker}-${m.mention_date}-${i}`}
-                    mention={m}
-                    onClick={() => setCaseTicker(m.ticker)}
-                  />
-                ))}
-              </div>
+            <div className="border-b border-border">
+              {mentions.map((m, i) => (
+                <ExecutiveMentionRow
+                  key={`${m.ticker}-${m.mention_date}-${i}`}
+                  mention={m}
+                  onClick={() => setCaseTicker(m.ticker)}
+                />
+              ))}
             </div>
           </div>
         )}

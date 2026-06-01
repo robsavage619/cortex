@@ -466,6 +466,12 @@ export interface ExecutiveMention {
   source_url: string | null
   quote: string | null
   stance: string
+  meaningful: boolean | null
+  significance: string | null
+  analysis: string | null
+  abn_1d: number | null
+  abn_5d: number | null
+  abn_20d: number | null
 }
 
 export interface ExecutiveResponse {
