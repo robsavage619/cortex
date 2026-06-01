@@ -10,7 +10,7 @@
 
 [phases.setup]
 # Add Node alongside the auto-detected Python packages.
-nixPkgs = ["...", "nodejs_22"]
+nixPkgs = ["...", "nodejs_24"]
 
 [phases.install]
 # Override the auto-detected install to pin uv explicitly.
@@ -23,4 +23,6 @@ cmds = [
 [phases.build]
 # Build the SPA after Python install. `npm ci` uses web/package-lock.json.
 dependsOn = ["install"]
-cmds = ["npm --prefix web ci", "npm --prefix web run build"]
+# npm install (not ci) so platform-specific optional deps (rolldown linux bindings)
+# are resolved fresh on the build host rather than taken from the macOS lockfile.
+cmds = ["npm --prefix web install", "npm --prefix web run build"]
