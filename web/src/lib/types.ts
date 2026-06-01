@@ -443,6 +443,31 @@ export interface RefreshStatus {
   error: string | null
 }
 
+export interface SourceFreshness {
+  source: string
+  last_run_at: string | null
+  last_ok_at: string | null
+  ok: boolean
+  rows_new: number | null
+  detail: string | null
+  age_seconds: number | null
+}
+
+export interface FreshnessResponse {
+  banner: string
+  sources: SourceFreshness[]
+}
+
+export interface FactorHistoryPoint {
+  snapshot_date: string
+  factor: string
+  ic_mean: number | null
+  ic_tstat: number | null
+  ic_tstat_nw: number | null
+  coverage: number | null
+  n_months: number | null
+}
+
 export interface StockReasoning {
   trend: string
   rsi: string

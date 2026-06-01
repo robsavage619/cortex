@@ -16,6 +16,8 @@ import type {
   DailyCARPoint,
   Digest,
   DissentIn,
+  FactorHistoryPoint,
+  FreshnessResponse,
   FundsResponse,
   PriceHistory,
   Prior,
@@ -52,6 +54,8 @@ const keys = {
   congressStats: (days: number) => ['congress-stats', days] as const,
   funds: (ticker: string | null) => ['funds', ticker] as const,
   refreshStatus: ['refresh-status'] as const,
+  freshness: ['freshness'] as const,
+  factorHistory: (factor: string | null) => ['factor-history', factor] as const,
   carSeries: (signal: string) => ['car-series', signal] as const,
 }
 
@@ -347,6 +351,31 @@ export function useRefreshStatus(enabled: boolean) {
     queryFn: async () => {
       const { data } = await http.get<RefreshStatus>('/refresh/status')
       return data
+    },
+  })
+}
+
+export function useFreshness() {
+  return useQuery({
+    queryKey: keys.freshness,
+    refetchInterval: 60_000,
+    queryFn: async () => {
+      const { data } = await http.get<FreshnessResponse>('/freshness')
+      return data.sources
+    },
+  })
+}
+
+export function useFactorHistory(factor?: string) {
+  return useQuery({
+    queryKey: keys.factorHistory(factor ?? null),
+    staleTime: 10 * 60_000,
+    queryFn: async () => {
+      const { data } = await http.get<{ points: FactorHistoryPoint[] }>(
+        '/factor-history',
+        { params: { factor: factor ?? undefined } },
+      )
+      return data.points
     },
   })
 }

@@ -11,6 +11,7 @@ import {
   useCongressStats,
   useFunds,
   useHistory,
+  useFreshness,
   useRefresh,
   useRefreshStatus,
   useReviewQueue,
@@ -692,6 +693,53 @@ function SyncButton() {
   )
 }
 
+// ── Per-source freshness strip ───────────────────────────────────────────────
+
+const _STALE_AFTER: Record<string, number> = {
+  // seconds past which a source is considered stale, per expected cadence
+  congress: 36 * 3600, // daily cron + slack
+  discover: 36 * 3600,
+  volatility: 36 * 3600,
+  funds: 10 * 24 * 3600, // weekly cron + slack
+}
+
+function fmtAge(seconds: number | null): string {
+  if (seconds == null) return '—'
+  const h = seconds / 3600
+  if (h < 1) return `${Math.max(1, Math.round(seconds / 60))}m`
+  if (h < 48) return `${Math.round(h)}h`
+  return `${Math.round(h / 24)}d`
+}
+
+function FreshnessStrip() {
+  const { data } = useFreshness()
+  if (!data || data.length === 0) return null
+
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+      {data.map(s => {
+        const stale =
+          s.age_seconds != null && s.age_seconds > (_STALE_AFTER[s.source] ?? 36 * 3600)
+        const tone = !s.ok ? 'bg-down' : stale ? 'bg-warn' : 'bg-cyan'
+        const title = !s.ok
+          ? `last run failed: ${s.detail ?? 'unknown error'}` +
+            (s.last_ok_at ? ` — last ok ${new Date(s.last_ok_at).toLocaleString()}` : '')
+          : `${s.detail ?? 'ok'} — ${new Date(s.last_run_at ?? '').toLocaleString()}`
+        return (
+          <span
+            key={s.source}
+            title={title}
+            className="num flex items-center gap-1 text-[10px] text-faint"
+          >
+            <span className={cn('h-1.5 w-1.5 rounded-full', tone)} />
+            {s.source} {fmtAge(s.age_seconds)}
+          </span>
+        )
+      })}
+    </div>
+  )
+}
+
 // ── Congress section ─────────────────────────────────────────────────────────
 
 function IconCongress({ className }: { className?: string }) {
@@ -1111,6 +1159,11 @@ export function Dashboard() {
             + NEW THESIS
           </Link>
         </div>
+      </div>
+
+      {/* Per-source data freshness */}
+      <div className="shrink-0 border-b border-line/40 px-5 py-1.5">
+        <FreshnessStrip />
       </div>
 
       {/* Sections */}
