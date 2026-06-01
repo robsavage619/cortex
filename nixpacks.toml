@@ -6,11 +6,15 @@
 # is no longer committed.
 #
 # `"..."` extends the provider-generated arrays instead of replacing them, so the
-# Python toolchain from the auto-detected plan is preserved and Node is added.
+# Python toolchain from the auto-detected plan is preserved.
+#
+# Node is NOT installed via nixpkgs — the pinned nixpkgs snapshot only has
+# nodejs_22=22.10.0 and nodejs_24 doesn't exist in it. Vite 8 requires 22.12+,
+# so we download the official Node 22.15.0 tarball directly in the build phase.
 
 [phases.setup]
-# Add Node alongside the auto-detected Python packages.
-nixPkgs = ["...", "nodejs_24"]
+# Keep auto-detected Python packages; no Node from nixpkgs (see comment above).
+nixPkgs = ["..."]
 
 [phases.install]
 # Override the auto-detected install to pin uv explicitly.
@@ -21,8 +25,10 @@ cmds = [
 ]
 
 [phases.build]
-# Build the SPA after Python install. `npm ci` uses web/package-lock.json.
 dependsOn = ["install"]
-# npm install (not ci) so platform-specific optional deps (rolldown linux bindings)
-# are resolved fresh on the build host rather than taken from the macOS lockfile.
-cmds = ["npm --prefix web install", "npm --prefix web run build"]
+# Single cmd so PATH export persists across the npm calls.
+# npm install (not ci) so platform-specific rolldown linux bindings are resolved
+# fresh on the build host rather than skipped due to the macOS-generated lockfile.
+cmds = [
+  "curl -fsSL https://nodejs.org/dist/v22.15.0/node-v22.15.0-linux-x64.tar.gz | tar -xz --strip-components=1 -C /usr/local && export PATH=/usr/local/bin:$PATH && npm --prefix web install && npm --prefix web run build"
+]
