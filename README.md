@@ -172,6 +172,48 @@ assumptions) **in the output itself**. As of the latest run no candidate factor 
 the bar, so the platform does no live trading. Honest negative results, surfaced rather
 than buried.
 
+### Executive-mentions signal — organic discovery from White House transcripts
+
+A signal the filing-based factors can't see: companies the administration **names in
+public** (a fact-sheet investment, a press-conference endorsement), which have moved
+stocks. The pipeline is precision-first and self-validating:
+
+1. **Source** — scans whitehouse.gov category RSS feeds (statements, fact-sheets,
+   releases), which carry full transcript text with exact dates and a guaranteed
+   administration speaker. (News co-occurrence was tried first and rejected as too noisy.)
+2. **Entity matching** — distinctive S&P 500 company names only: multi-word names match
+   as a full phrase ("State Street", never "State"), single tokens only if distinctive,
+   no bare-ticker matches (which collide with acronyms like ICE / IP), plus common-word
+   stoplists.
+3. **Reaction gate** — each candidate is measured by its abnormal return vs SPY at +1/+5/
+   +20 trading days. This is both the "did it actually move" payoff and a noise filter: a
+   mention with no reaction self-drops.
+4. **Significance** — a Claude Haiku verdict classifies each mention as meaningful vs
+   incidental (a second precision backstop). LLM calls are gated to the deployment so
+   local runs never spend tokens.
+
+Surfaced in the portal as a "White House Buzz" reaction timeline, and evaluable through
+the same CAR event-study engine as the other signals (`event-study --signal executive`).
+
+---
+
+## Operations & deployment
+
+Built to run unattended on a single Railway service (FastAPI + DuckDB on a persistent
+volume), with the data staying fresh on its own:
+
+- **Per-source refresh on independent cadences** — `sync-all --only congress,executive,…`;
+  the full refresh runs as an isolated subprocess so a memory-heavy sync can't take down
+  the live web server.
+- **Scheduled freshness** — Railway cron services trigger work over HTTP against the
+  volume-owning web process (volumes can't be shared between services), so congress /
+  prices / White-House mentions refresh daily, 13F weekly, a factor-stat snapshot
+  nightly, and a DuckDB backup weekly.
+- **Visible health** — a `/freshness` endpoint and dashboard strip show each source's
+  staleness; any failed sync step posts to a webhook and is recorded, never silently
+  dropped. DuckDB snapshots (Parquet export, pruned, optional S3) guard against
+  corruption.
+
 ---
 
 ## Data engineering notes (hard-won)
@@ -224,8 +266,10 @@ uv run cortex serve                  # http://127.0.0.1:8000
 ### CLI surface
 
 `db-init` · `new` · `review` · `calibration` · `mirror` · `rag-index` · `discover` ·
-`vol-screen` · `congress-sync` · `funds-sync` · `funds-backfill` · `insiders-sync` ·
-`activism-sync` · `fundamentals-sync` · `congress-oos` · `backtest` · `serve`
+`vol-screen` · `congress-sync` · `house-sync` · `funds-sync` · `funds-backfill` ·
+`insiders-sync` · `activism-sync` · `fundamentals-sync` · `exec-mention` · `event-study` ·
+`congress-oos` · `backtest` · `snapshot-factors` · `sync-all` · `backup` · `serve` ·
+`trigger-refresh` · `trigger-snapshot` · `trigger-backup`
 
 Run `uv run cortex <command> --help` for arguments.
 
@@ -237,17 +281,25 @@ sensitive is committed.
 | Variable                 | Purpose                                              |
 |--------------------------|------------------------------------------------------|
 | `CORTEX_SEC_USER_AGENT`  | SEC EDGAR contact identity (`Name email`) — required |
-| `CORTEX_DUCKDB_PATH`     | Override the DuckDB path (must end in `.db`)         |
+| `CORTEX_DUCKDB_PATH`     | Override the DuckDB path (must end in `.db`) — point at the volume on Railway |
 | `CORTEX_VAULT_DIR`       | Markdown mirror output directory                     |
 | `CORTEX_RESEARCH_DIR`    | Research-note source for the RAG index               |
 | `CORTEX_CLAUDE_BIN`      | Explicit path to the `claude` CLI (LLM analysis)     |
+| `ANTHROPIC_API_KEY`      | Claude key for House-PDF OCR + executive-mention significance |
+| `CORTEX_ALLOW_LLM`       | Force-enable Anthropic calls locally (default: only on Railway) |
+| `CORTEX_ALERT_WEBHOOK`   | Optional Discord/Slack webhook for sync-failure alerts |
+| `CORTEX_BACKUP_S3_URI`   | Optional off-box backup target for DuckDB snapshots  |
+| `CORTEX_REFRESH_URL` / `CORTEX_AUTH_USER` / `CORTEX_AUTH_PASS` | Used by the cron `trigger-*` commands to reach the web app |
 | `VITE_LOGODEV_TOKEN`     | Optional logo enhancement; UI falls back to monograms|
+
+Deployment specifics (Railway services, cron schedules, volume notes) live in
+[`deploy/README.md`](deploy/README.md).
 
 ---
 
 ## Engineering quality
 
-- **69 tests** concentrated on the pure-logic core — calibration math, thesis CRUD,
+- **85 tests** concentrated on the pure-logic core — calibration math, thesis CRUD,
   storage, RAG, and the backtest's scoring helpers — plus HTTP-mocked data sources
   (`respx`). The ingestion, API, and CLI layers are exercised manually, not yet in the
   automated suite.

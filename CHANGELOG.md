@@ -13,8 +13,32 @@ All notable changes to this project are documented here. The format is based on
 - Removed a hardcoded, machine-specific absolute path from the LLM-analysis code path;
   the `claude` binary is now resolved from `PATH` with an optional `CORTEX_CLAUDE_BIN`
   override.
+- **Anthropic token spend gated to the deployment.** All Claude API calls (House-PDF
+  OCR and the new executive-mention significance analysis) run only when
+  `RAILWAY_ENVIRONMENT` / `CORTEX_PRODUCTION` is set, via `config.llm_calls_enabled()`,
+  so local development and testing never bill the API key. `CORTEX_ALLOW_LLM=1`
+  overrides for a deliberate local run.
 
 ### Added
+- **Executive-mentions signal** — organic discovery of companies named by the
+  administration. Scans whitehouse.gov category RSS feeds (statements / fact-sheets /
+  releases) for S&P 500 companies via a precision-first entity matcher (full-phrase
+  multi-word names, distinctive single tokens, common-word/ticker stoplists), then
+  enriches each hit with a market-reaction gate (abnormal return vs SPY at +1/+5/+20
+  trading days) and a Claude Haiku significance verdict that doubles as a precision
+  backstop. New `executive_mentions` table (schema v15), `event-study --signal
+  executive`, and a dashboard "White House Buzz" reaction timeline (scrollable, with
+  per-mention source links). CLI: `exec-mention add|list|sync`.
+- **Plain-English mode** — an app-wide toggle that translates the quant surface (factor
+  codes, z-scores, composite percentiles, section labels) into plain language so the app
+  reads clearly for non-quants.
+- **Operations & deployment layer** — per-source refresh (`sync-all --only …`),
+  per-source freshness telemetry (`/freshness` + a dashboard strip), failure alerting to
+  a webhook, DuckDB snapshot/backups (`cortex backup`, pruning, optional S3), a nightly
+  factor-stat history snapshot (`snapshot-factors` → `/factor-history`), and Railway cron
+  services that trigger work over HTTP against the volume-owning web process
+  (`trigger-refresh` / `trigger-backup` / `trigger-snapshot`). The full refresh runs as
+  an isolated subprocess and survives crashes (health check + restart policy).
 - Root `README.md` (portfolio overview) and this changelog.
 
 ## [0.1.0] — 2026-05-24
