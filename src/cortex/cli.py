@@ -538,7 +538,14 @@ def _cmd_snapshot_factors(args: argparse.Namespace) -> None:
     from cortex.storage.schemas import apply_schema
 
     settings = load_settings()
-    rep = run_backtest(settings.duckdb_path, start_year=args.start_year)
+    try:
+        rep = run_backtest(settings.duckdb_path, start_year=args.start_year)
+    except Exception as exc:  # noqa: BLE001 - unattended job: alert, don't vanish
+        from cortex.alerts import send_alert
+
+        send_alert(f"⚠️ CORTEX snapshot-factors failed: {exc}")
+        print(f"snapshot-factors failed: {exc}", flush=True)
+        raise SystemExit(1) from exc
     today = date.today()
     n_months = rep.variants[0].n_months if rep.variants else None
 
@@ -563,6 +570,31 @@ def _cmd_snapshot_factors(args: argparse.Namespace) -> None:
                 list(r),
             )
     print(f"Snapshotted {len(rows)} factor t-stats for {today}")
+
+
+def _cmd_trigger_snapshot(args: argparse.Namespace) -> None:
+    """POST /admin/snapshot-factors on the running web app (nightly cron)."""
+    import os
+
+    import httpx
+
+    base = (args.url or os.environ.get("CORTEX_REFRESH_URL", "")).rstrip("/")
+    if not base:
+        print("error: pass --url or set CORTEX_REFRESH_URL", flush=True)
+        raise SystemExit(2)
+
+    user = os.environ.get("CORTEX_AUTH_USER", "")
+    pw = os.environ.get("CORTEX_AUTH_PASS", "")
+    auth = (user, pw) if user else None
+    try:
+        resp = httpx.post(
+            f"{base}/admin/snapshot-factors", auth=auth, timeout=30.0
+        )
+        resp.raise_for_status()
+    except httpx.HTTPError as exc:
+        print(f"trigger-snapshot failed: {exc}", flush=True)
+        raise SystemExit(1) from exc
+    print(f"triggered factor snapshot — {resp.json().get('status')}")
 
 
 def _cmd_backup(args: argparse.Namespace) -> None:
@@ -834,6 +866,17 @@ def main() -> None:
         help="First year to evaluate (default: 2017)",
     )
 
+    trigsnap_p = sub.add_parser(
+        "trigger-snapshot",
+        help="POST /admin/snapshot-factors on the running web app (nightly cron)",
+    )
+    trigsnap_p.add_argument(
+        "--url",
+        default=None,
+        metavar="URL",
+        help="Web app base URL (default: $CORTEX_REFRESH_URL)",
+    )
+
     backup_p = sub.add_parser(
         "backup", help="Export the DuckDB to a timestamped snapshot on the volume"
     )
@@ -888,6 +931,7 @@ def main() -> None:
         "sync-all": _cmd_sync_all,
         "trigger-refresh": _cmd_trigger_refresh,
         "trigger-backup": _cmd_trigger_backup,
+        "trigger-snapshot": _cmd_trigger_snapshot,
         "snapshot-factors": _cmd_snapshot_factors,
         "backup": _cmd_backup,
     }

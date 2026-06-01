@@ -272,6 +272,28 @@ def factor_history(factor: str | None = None) -> dict[str, Any]:
     }
 
 
+@app.post("/admin/snapshot-factors")
+def admin_snapshot_factors() -> dict[str, Any]:
+    """Spawn `cortex snapshot-factors` as an isolated subprocess.
+
+    The backtest pulls S&P 500 prices through yfinance/numpy and is memory-heavy
+    — same OOM hazard as a sync — so it runs detached like /refresh rather than
+    in the web worker. Triggered nightly by a Railway cron service."""
+    argv = [sys.executable, "-m", "cortex.cli", "snapshot-factors"]
+    try:
+        subprocess.Popen(  # noqa: S603 - fixed argv, no shell, no user input
+            argv,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+    except Exception as exc:  # noqa: BLE001 - surface spawn failure visibly
+        raise HTTPException(
+            status_code=500, detail=f"failed to start snapshot: {exc}"
+        ) from exc
+    return {"banner": _BANNER, "status": "started"}
+
+
 @app.post("/admin/backup")
 def admin_backup(keep: int = 7) -> dict[str, Any]:
     """Snapshot the DuckDB to the volume. Triggered by the weekly backup cron

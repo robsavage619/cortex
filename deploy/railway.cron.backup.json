@@ -1,0 +1,11 @@
+{
+  "$schema": "https://schema.railway.app/railway-schema.json",
+  "build": {
+    "builder": "NIXPACKS"
+  },
+  "deploy": {
+    "startCommand": "uv run cortex trigger-backup --keep 7",
+    "cronSchedule": "0 9 * * 0",
+    "restartPolicyType": "NEVER"
+  }
+}
