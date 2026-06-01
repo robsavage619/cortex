@@ -10,7 +10,7 @@
 
 [phases.setup]
 # Add Node alongside the auto-detected Python packages.
-nixPkgs = ["...", "nodejs_20"]
+nixPkgs = ["...", "nodejs_22"]
 
 [phases.install]
 # Override the auto-detected install to pin uv explicitly.
