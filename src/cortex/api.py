@@ -1035,6 +1035,12 @@ def get_executive(ticker: str | None = None, limit: int = 50) -> dict[str, Any]:
                 "source_url": m.source_url,
                 "quote": m.quote,
                 "stance": m.stance,
+                "meaningful": m.meaningful,
+                "significance": m.significance,
+                "analysis": m.analysis,
+                "abn_1d": m.abn_1d,
+                "abn_5d": m.abn_5d,
+                "abn_20d": m.abn_20d,
             }
             for m in mentions
         ],

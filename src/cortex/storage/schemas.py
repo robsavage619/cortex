@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import duckdb
 
-SCHEMA_VERSION = 14
+SCHEMA_VERSION = 15
 
 DDL_STATEMENTS = (
     """
@@ -196,6 +196,12 @@ DDL_STATEMENTS = (
         source_url   VARCHAR,
         quote        VARCHAR,
         stance       VARCHAR   NOT NULL DEFAULT 'positive',
+        meaningful   BOOLEAN,
+        significance VARCHAR,
+        analysis     VARCHAR,
+        abn_1d       DOUBLE,
+        abn_5d       DOUBLE,
+        abn_20d      DOUBLE,
         synced_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
     )
     """,
@@ -231,6 +237,12 @@ MIGRATION_STATEMENTS = (
     "ALTER TABLE volatility_screen ADD COLUMN IF NOT EXISTS company_name VARCHAR",
     "ALTER TABLE volatility_screen ADD COLUMN IF NOT EXISTS max_range_pct DOUBLE",
     "ALTER TABLE volatility_screen ADD COLUMN IF NOT EXISTS max_dollar_range DOUBLE",
+    "ALTER TABLE executive_mentions ADD COLUMN IF NOT EXISTS meaningful BOOLEAN",
+    "ALTER TABLE executive_mentions ADD COLUMN IF NOT EXISTS significance VARCHAR",
+    "ALTER TABLE executive_mentions ADD COLUMN IF NOT EXISTS analysis VARCHAR",
+    "ALTER TABLE executive_mentions ADD COLUMN IF NOT EXISTS abn_1d DOUBLE",
+    "ALTER TABLE executive_mentions ADD COLUMN IF NOT EXISTS abn_5d DOUBLE",
+    "ALTER TABLE executive_mentions ADD COLUMN IF NOT EXISTS abn_20d DOUBLE",
 )
 
 

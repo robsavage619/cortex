@@ -33,6 +33,12 @@ Uses the root `railway.json`. Required env vars:
 | `CORTEX_SEC_USER_AGENT` | `"Name email"` — SEC returns 403 without it |
 | `CORTEX_ALERT_WEBHOOK` | *(optional)* Discord/Slack webhook; sync failures post here |
 | `CORTEX_BACKUP_S3_URI` | *(optional)* off-box backup target, e.g. `s3://bucket/cortex` |
+| `ANTHROPIC_API_KEY` | Claude key for House-PDF OCR + executive-mention significance analysis |
+
+> **Token spend is gated to Railway.** Anthropic API calls (House OCR, Haiku
+> mention analysis) only fire when `RAILWAY_ENVIRONMENT` or `CORTEX_PRODUCTION`
+> is set — so local dev/testing never bills the key. For an intentional one-off
+> local LLM run, set `CORTEX_ALLOW_LLM=1`. See `cortex.config.llm_calls_enabled`.
 
 ### 2. Cron services (one per file in this directory)
 For each `railway.cron.*.json`, add a new service in the **same Railway project**

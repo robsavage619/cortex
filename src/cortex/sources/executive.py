@@ -14,8 +14,9 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import os
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -34,6 +35,13 @@ class ExecutiveMention:
     source_url: str | None = None
     quote: str | None = None
     stance: str = "positive"
+    # Enrichment (filled by the Haiku analysis + price-reaction gate on sync).
+    meaningful: bool | None = None
+    significance: str | None = None
+    analysis: str | None = None
+    abn_1d: float | None = None
+    abn_5d: float | None = None
+    abn_20d: float | None = None
 
     @property
     def dedupe_id(self) -> str:
@@ -59,11 +67,17 @@ def store_mentions(mentions: list[ExecutiveMention], db_path: Path) -> int:
             """
             INSERT INTO executive_mentions
               (id, ticker, speaker, mention_date, source_type, source_url,
-               quote, stance)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+               quote, stance, meaningful, significance, analysis,
+               abn_1d, abn_5d, abn_20d)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT (id) DO UPDATE SET
               quote = excluded.quote, stance = excluded.stance,
-              source_type = excluded.source_type
+              source_type = excluded.source_type,
+              meaningful = excluded.meaningful,
+              significance = excluded.significance,
+              analysis = excluded.analysis,
+              abn_1d = excluded.abn_1d, abn_5d = excluded.abn_5d,
+              abn_20d = excluded.abn_20d
             """,
             [
                 (
@@ -75,6 +89,12 @@ def store_mentions(mentions: list[ExecutiveMention], db_path: Path) -> int:
                     m.source_url,
                     m.quote,
                     m.stance,
+                    m.meaningful,
+                    m.significance,
+                    m.analysis,
+                    m.abn_1d,
+                    m.abn_5d,
+                    m.abn_20d,
                 )
                 for m in mentions
             ],
@@ -278,11 +298,106 @@ def fetch_whitehouse_feed(url: str) -> list[dict[str, str]]:
         return []
 
 
+# ── Haiku analysis (significance + precision backstop) ───────────────────────
+
+_HAIKU_MODEL = "claude-haiku-4-5-20251001"
+
+_ANALYSIS_SYSTEM = (
+    "You judge whether a White House statement is a MEANINGFUL, market-relevant "
+    "mention of a specific public company. Meaningful = the administration is "
+    "announcing a deal/investment, endorsing, targeting, or setting policy that "
+    "directly involves THIS company or its core business. NOT meaningful = the "
+    "name appears incidentally, the text matched a different entity/person/place "
+    "with the same word, it's a passing list item, or it's unrelated. "
+    'Respond ONLY with compact JSON: {"meaningful": bool, '
+    '"significance": "high"|"medium"|"low", "reason": "<=15 words"}. '
+    "significance reflects likely market impact; use low for incidental hits."
+)
+
+
+def analyze_mention(
+    company: str, ticker: str, quote: str
+) -> tuple[bool | None, str | None, str | None]:
+    """Classify a mention with Haiku. Returns (meaningful, significance, reason).
+
+    (None, None, None) when LLM calls are disabled for this environment, the key
+    is unset, or the call fails — the pipeline degrades to unanalyzed rather than
+    breaking the sync.
+
+    Token spend is gated to the Railway deployment via ``llm_calls_enabled`` so
+    local dev/testing never bills the API key.
+    """
+    import json
+
+    from cortex.config import llm_calls_enabled
+
+    if not llm_calls_enabled():
+        return (None, None, None)
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        return (None, None, None)
+    try:
+        import anthropic
+
+        client = anthropic.Anthropic(api_key=api_key)
+        resp = client.messages.create(
+            model=_HAIKU_MODEL,
+            max_tokens=120,
+            system=[
+                {
+                    "type": "text",
+                    "text": _ANALYSIS_SYSTEM,
+                    "cache_control": {"type": "ephemeral"},
+                }
+            ],
+            messages=[
+                {
+                    "role": "user",
+                    "content": (
+                        f"Company: {company} ({ticker}).\n"
+                        f'White House text: "{quote}"\n'
+                        "Is this a meaningful mention of this company?"
+                    ),
+                }
+            ],
+        )
+        raw = resp.content[0].text.strip()
+        start, end = raw.find("{"), raw.rfind("}")
+        if start == -1 or end == -1:
+            return (None, None, None)
+        data = json.loads(raw[start : end + 1])
+        sig = str(data.get("significance", "")).lower() or None
+        if sig not in (None, "high", "medium", "low"):
+            sig = "low"
+        return (bool(data.get("meaningful")), sig, str(data.get("reason") or "")[:200])
+    except Exception as exc:  # noqa: BLE001 - never break a sync on analysis
+        log.warning("analysis: Haiku call failed for %s — %s", ticker, exc)
+        return (None, None, None)
+
+
+def _enrich(mention: ExecutiveMention, company: str) -> ExecutiveMention:
+    """Attach the price reaction and the Haiku significance verdict."""
+    reaction = price_reaction(mention.ticker, mention.mention_date)
+    meaningful, significance, reason = analyze_mention(
+        company, mention.ticker, mention.quote or ""
+    )
+    return replace(
+        mention,
+        meaningful=meaningful,
+        significance=significance,
+        analysis=reason,
+        abn_1d=reaction.get("abn_1d") if reaction.get("available") else None,
+        abn_5d=reaction.get("abn_5d") if reaction.get("available") else None,
+        abn_20d=reaction.get("abn_20d") if reaction.get("available") else None,
+    )
+
+
 def fetch_mentions_whitehouse(db_path: Path) -> int:
     """Discover executive company mentions from whitehouse.gov and store them.
 
     Scans the full text of recent statements/fact-sheets/releases for S&P 500
-    companies named precisely, then upserts. Returns new-row count.
+    companies named precisely, enriches each with the price reaction and a Haiku
+    significance verdict, then upserts. Returns new-row count.
     """
     from cortex.sources.universe import sp500_names
 
@@ -291,19 +406,22 @@ def fetch_mentions_whitehouse(db_path: Path) -> int:
         log.warning("whitehouse: empty universe name map; skipping fetch")
         return 0
     matchers = _company_matchers(names)
-    all_mentions: list[ExecutiveMention] = []
+
+    # Dedupe by (ticker, date) before enriching so we don't pay for the same
+    # Haiku/price call twice.
+    raw_mentions: dict[tuple[str, date], ExecutiveMention] = {}
     for feed_url in _WH_FEEDS:
         for item in fetch_whitehouse_feed(feed_url):
             blob = f"{item['title']}. {item['body']}"
-            all_mentions.extend(
-                extract_from_document(
-                    blob,
-                    date_iso=item["date"],
-                    url=item["link"],
-                    matchers=matchers,
-                )
-            )
-    return store_mentions(all_mentions, db_path)
+            for m in extract_from_document(
+                blob, date_iso=item["date"], url=item["link"], matchers=matchers
+            ):
+                raw_mentions.setdefault((m.ticker, m.mention_date), m)
+
+    enriched = [
+        _enrich(m, names.get(m.ticker, m.ticker)) for m in raw_mentions.values()
+    ]
+    return store_mentions(enriched, db_path)
 
 
 # ── Price-reaction gate (the quality filter + "bump and trend after") ─────────
@@ -384,10 +502,11 @@ def list_mentions(
             rows = conn.execute(
                 f"""
                 SELECT ticker, mention_date, speaker, source_type, source_url,
-                       quote, stance
+                       quote, stance, meaningful, significance, analysis,
+                       abn_1d, abn_5d, abn_20d
                 FROM executive_mentions
                 {where}
-                ORDER BY mention_date DESC
+                ORDER BY mention_date DESC, ticker ASC
                 LIMIT ?
                 """,
                 params,
@@ -396,7 +515,11 @@ def list_mentions(
         return []
 
     out: list[ExecutiveMention] = []
-    for tk, mdate, speaker, source_type, source_url, quote, stance in rows:
+    for row in rows:
+        (
+            tk, mdate, speaker, source_type, source_url, quote, stance,
+            meaningful, significance, analysis, abn_1d, abn_5d, abn_20d,
+        ) = row
         out.append(
             ExecutiveMention(
                 ticker=tk,
@@ -406,6 +529,12 @@ def list_mentions(
                 source_url=source_url,
                 quote=quote,
                 stance=stance,
+                meaningful=meaningful,
+                significance=significance,
+                analysis=analysis,
+                abn_1d=abn_1d,
+                abn_5d=abn_5d,
+                abn_20d=abn_20d,
             )
         )
     return out

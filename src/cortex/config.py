@@ -19,6 +19,23 @@ DEFAULT_VAULT_DIR = Path.home() / "Vault" / "savage_vault" / "investing"
 DEFAULT_SEC_USER_AGENT = "CORTEX Research cortex-research@example.com"
 
 
+def llm_calls_enabled() -> bool:
+    """Whether spending Anthropic API tokens is permitted in this environment.
+
+    Tokens are billed only to the live Railway deployment (real users). Local
+    development and testing must NOT consume them — so LLM calls are gated to
+    environments where ``RAILWAY_ENVIRONMENT`` (set automatically by Railway) or
+    ``CORTEX_PRODUCTION`` is present. For an intentional one-off local run, set
+    ``CORTEX_ALLOW_LLM=1``.
+    """
+    _load_dotenv(Path.cwd() / ".env")
+    if os.environ.get("CORTEX_ALLOW_LLM", "").strip().lower() in ("1", "true", "yes"):
+        return True
+    return bool(
+        os.environ.get("RAILWAY_ENVIRONMENT") or os.environ.get("CORTEX_PRODUCTION")
+    )
+
+
 def sec_user_agent() -> str:
     """Return the SEC EDGAR User-Agent / identity string.
 

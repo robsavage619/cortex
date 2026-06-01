@@ -429,6 +429,16 @@ def _parse_ptr_pdf(
 
     import os
 
+    from cortex.config import llm_calls_enabled
+
+    # Token spend is gated to the Railway deployment — local dev/testing must not
+    # bill the API key (set CORTEX_ALLOW_LLM=1 for an intentional local OCR run).
+    if not llm_calls_enabled():
+        log.debug(
+            "House: scanned PDF skipped (LLM disabled outside Railway): %s", report_url
+        )
+        return []
+
     if not os.environ.get("ANTHROPIC_API_KEY"):
         log.debug(
             "House: scanned PDF skipped (ANTHROPIC_API_KEY not set): %s", report_url
