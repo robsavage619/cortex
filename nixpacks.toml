@@ -8,15 +8,17 @@
 # `"..."` extends the provider-generated arrays instead of replacing them, so the
 # Python toolchain from the auto-detected plan is preserved and Node is added.
 
-[variables]
-# NIXPACKS auto-detects uv and generates `pip install uv==$NIXPACKS_UV_VERSION`.
-# That variable is otherwise empty in this Railway/NIXPACKS combo, producing the
-# invalid requirement `uv==`. Pin it to a real version so install succeeds.
-NIXPACKS_UV_VERSION = "0.11.7"
-
 [phases.setup]
 # Add Node alongside the auto-detected Python packages.
 nixPkgs = ["...", "nodejs_20"]
+
+[phases.install]
+# Override the auto-detected install to pin uv explicitly.
+# $NIXPACKS_UV_VERSION is empty in Railway's nixpacks environment, so
+# `pip install uv==$NIXPACKS_UV_VERSION` fails. Hardcode the version here instead.
+cmds = [
+  "python -m venv --copies /opt/venv && . /opt/venv/bin/activate && pip install uv==0.11.7 && uv sync --no-dev --frozen"
+]
 
 [phases.build]
 # Build the SPA after Python install. `npm ci` uses web/package-lock.json.
