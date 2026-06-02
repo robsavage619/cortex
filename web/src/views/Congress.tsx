@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { Fragment, useMemo, useState } from 'react'
 import {
   Bar,
   ComposedChart,
@@ -14,6 +14,7 @@ import { ChevronDown, ChevronRight, ExternalLink, HelpCircle, Landmark } from 'l
 import { useCongress, useCongressStats } from '@/lib/api'
 import type { CongressMemberStat, CongressTickerStat } from '@/lib/types'
 import { TickerLogo } from '@/components/ui/TickerLogo'
+import { TradeImpactChart } from '@/components/charts/TradeImpactChart'
 import { cn, fmtCompact, fmtDate, isBuy, stripTitle } from '@/lib/utils'
 import { StockModal } from '@/views/StockModal'
 import { MemberModal } from '@/views/MemberModal'
@@ -398,6 +399,7 @@ export function Congress() {
   const [modalTicker, setModalTicker] = useState<string | null>(null)
   const [memberModal, setMemberModal] = useState<string | null>(null)
   const [showAllFeed, setShowAllFeed] = useState(false)
+  const [expandedTrade, setExpandedTrade] = useState<number | null>(null)
   const FEED_LIMIT = 50
 
   const flow = useMemo(
@@ -528,11 +530,12 @@ export function Congress() {
               <div className="mb-2 flex items-baseline gap-2">
                 <span className="num text-[11px] font-semibold tracking-widest text-cyan">RECENT FILINGS</span>
                 <span className="font-sans text-[10px] text-faint">{feed?.count ?? 0} total disclosures</span>
-                <span className="font-sans text-[10px] text-faint">· amounts are mid-point of reported bracket</span>
+                <span className="font-sans text-[10px] text-faint">· ▸ expand any row to see the price when they traded and how it's moved since</span>
               </div>
               <table className="w-full border-collapse">
                 <thead>
                   <tr className="border-b border-border text-left">
+                    <th className="label px-2 py-1.5 w-6" />
                     <th className="label px-2 py-1.5">MEMBER</th>
                     <th className="label px-2 py-1.5">TICKER</th>
                     <th className="label px-2 py-1.5">ACTION</th>
@@ -545,8 +548,19 @@ export function Congress() {
                 <tbody>
                   {(showAllFeed ? (feed?.trades ?? []) : (feed?.trades ?? []).slice(0, FEED_LIMIT)).map((tr, i) => {
                     const buy = isBuy(tr.transaction_type)
+                    const isOpen = expandedTrade === i
                     return (
-                      <tr key={`${tr.ticker}-${i}`} className="border-b border-border-dim hover:bg-bg-hover">
+                      <Fragment key={`${tr.ticker}-${i}`}>
+                      <tr className={cn('border-b border-border-dim hover:bg-bg-hover', isOpen && 'bg-bg-hover')}>
+                        <td className="px-2 py-1.5">
+                          <button
+                            onClick={() => setExpandedTrade(isOpen ? null : i)}
+                            className="text-faint hover:text-cyan"
+                            title="Show price when they traded"
+                          >
+                            {isOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                          </button>
+                        </td>
                         <td className="px-2 py-1.5">
                           <button
                             onClick={() => setMemberModal(tr.senator)}
@@ -584,6 +598,19 @@ export function Congress() {
                           )}
                         </td>
                       </tr>
+                      {isOpen && (
+                        <tr>
+                          <td colSpan={8} className="p-0">
+                            <TradeImpactChart
+                              ticker={tr.ticker}
+                              tradeDate={tr.transaction_date}
+                              side={buy ? 'buy' : 'sell'}
+                              markerLabel={buy ? 'BOUGHT' : 'SOLD'}
+                            />
+                          </td>
+                        </tr>
+                      )}
+                      </Fragment>
                     )
                   })}
                 </tbody>

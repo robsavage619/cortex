@@ -1,4 +1,4 @@
-import { Activity, BarChart3, Landmark, LayoutDashboard, ListChecks, PlusCircle, Sparkles } from 'lucide-react'
+import { Activity, BarChart3, Fish, Landmark, LayoutDashboard, ListChecks, PlusCircle, Sparkles } from 'lucide-react'
 import { NavLink, Outlet } from 'react-router-dom'
 
 import { HeaderTicker } from '@/components/ui/HeaderTicker'
@@ -11,6 +11,7 @@ const nav = [
   { to: '/review',      label: 'REVIEW',     icon: ListChecks,      end: false },
   { to: '/swing', label: 'SWING', icon: Activity,       end: false },
   { to: '/congress',    label: 'CONGRESS',   icon: Landmark,        end: false },
+  { to: '/whales',      label: 'WHALES',     icon: Fish,            end: false },
   { to: '/calibration', label: 'CALIBRATE',  icon: BarChart3,       end: false },
   { to: '/new',         label: 'NEW THESIS', icon: PlusCircle,      end: false },
 ]

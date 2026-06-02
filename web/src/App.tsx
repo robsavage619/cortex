@@ -6,6 +6,7 @@ import { PlainModeProvider } from '@/lib/plainMode'
 import { SwingScreen } from '@/views/SwingScreen'
 import { Calibration } from '@/views/Calibration'
 import { Congress } from '@/views/Congress'
+import { Whales } from '@/views/Whales'
 import { Dashboard } from '@/views/Dashboard'
 import { NewThesis } from '@/views/NewThesis'
 import { ReviewQueue } from '@/views/ReviewQueue'
@@ -27,6 +28,7 @@ export default function App() {
               <Route path="new" element={<NewThesis />} />
               <Route path="swing" element={<SwingScreen />} />
               <Route path="congress" element={<Congress />} />
+              <Route path="whales" element={<Whales />} />
               <Route path="calibration" element={<Calibration />} />
               <Route path="review" element={<ReviewQueue />} />
             </Route>

@@ -10,7 +10,6 @@ import {
   useCongress,
   useCongressStats,
   useExecutive,
-  useFunds,
   useHistory,
   useFreshness,
   useRefresh,
@@ -872,163 +871,6 @@ function CongressSection() {
   )
 }
 
-// ── Smart-money (13F) section ───────────────────────────────────────────────
-
-function IconFund({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 16 16" className={className} fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
-      {/* bank columns */}
-      <path d="M8 1.5 L14 5 H2 Z" />
-      <path d="M2 5 h12" />
-      <path d="M3.5 5 v6 M6.5 5 v6 M9.5 5 v6 M12.5 5 v6" />
-      <path d="M2 11 h12 M1.5 13.5 h13" />
-    </svg>
-  )
-}
-
-function fmtBigUsd(v: number): string {
-  if (v >= 1e9) return `$${(v / 1e9).toFixed(1)}B`
-  if (v >= 1e6) return `$${(v / 1e6).toFixed(0)}M`
-  if (v >= 1e3) return `$${(v / 1e3).toFixed(0)}K`
-  return `$${v}`
-}
-
-function SmartMoneyConviction({ moves }: { moves: { manager: string; ticker: string; action: string; value: number }[] }) {
-  type Agg = { managers: Set<string>; value: number; hasNew: boolean }
-  const byTicker = new Map<string, Agg>()
-  for (const m of moves) {
-    const agg = byTicker.get(m.ticker) ?? { managers: new Set(), value: 0, hasNew: false }
-    agg.managers.add(m.manager)
-    agg.value += m.value
-    if (m.action === 'NEW') agg.hasNew = true
-    byTicker.set(m.ticker, agg)
-  }
-  const sorted = [...byTicker.entries()]
-    .map(([ticker, agg]) => ({ ticker, count: agg.managers.size, value: agg.value, hasNew: agg.hasNew }))
-    .sort((a, b) => b.count - a.count || b.value - a.value)
-    .slice(0, 8)
-
-  if (sorted.length === 0) return null
-  const maxCount = Math.max(...sorted.map(r => r.count), 1)
-
-  return (
-    <div className="border-b border-border px-5 py-4" style={{ background: 'rgba(255,255,255,0.015)' }}>
-      <span className="label mb-3 block text-[9px] tracking-[0.12em] text-muted/60">INSTITUTIONAL CONVICTION · MANAGERS BUYING</span>
-      <div className="space-y-2.5">
-        {sorted.map(row => {
-          const pct = (row.count / maxCount) * 100
-          return (
-            <div key={row.ticker} className="grid items-center gap-3" style={{ gridTemplateColumns: '44px 1fr 110px' }}>
-              <span className="num text-[10px] font-bold tracking-wide text-cyan">{row.ticker}</span>
-              <div className="relative h-[5px] overflow-hidden rounded-full" style={{ background: 'rgba(255,255,255,0.05)' }}>
-                <div
-                  className="absolute inset-y-0 left-0 rounded-full transition-all duration-500"
-                  style={{
-                    width: `${pct}%`,
-                    background: 'linear-gradient(90deg, rgba(6,182,212,0.65) 0%, rgba(6,182,212,0.2) 100%)',
-                  }}
-                />
-                {pct > 2 && (
-                  <div
-                    className="absolute inset-y-0 w-[2px] rounded-full"
-                    style={{
-                      left: `calc(${pct}% - 1px)`,
-                      background: 'rgba(6,182,212,0.9)',
-                      boxShadow: '0 0 5px rgba(6,182,212,0.7)',
-                    }}
-                  />
-                )}
-              </div>
-              <div className="flex items-center justify-end gap-2">
-                <span className="num text-[9px] text-muted">{row.count} {row.count === 1 ? 'mgr' : 'mgrs'}</span>
-                <span className="num text-[9px] text-faint">{fmtBigUsd(row.value)}</span>
-                {row.hasNew && (
-                  <span className="num rounded-sm border border-up/30 bg-up/10 px-1 py-px text-[7px] font-bold tracking-widest text-up">NEW</span>
-                )}
-              </div>
-            </div>
-          )
-        })}
-      </div>
-    </div>
-  )
-}
-
-function SmartMoneySection() {
-  const { data, isLoading } = useFunds(null)
-  const moves = data?.moves ?? []
-
-  return (
-    <div>
-      <SectionHeader
-        icon={IconFund}
-        label="SMART MONEY"
-        sub="Institutional 13F buys (NEW + ADD) — Wood, Buffett, Ackman, Burry, Dalio & more"
-        count={moves.length}
-        tone="strong-buy"
-      />
-      {moves.length > 0 && <SmartMoneyConviction moves={moves} />}
-      {isLoading ? (
-        <div className="px-5 py-5">
-          <span className="num text-[11px] text-faint">Loading 13F filings…</span>
-        </div>
-      ) : moves.length === 0 ? (
-        <div className="border-b border-border px-5 py-5">
-          <span className="num text-[11px] text-faint">
-            No fund data yet — run <code className="font-mono text-cyan">cortex funds-sync</code> or hit SYNC DATA
-          </span>
-        </div>
-      ) : (
-        <div className="max-h-[360px] overflow-y-auto border-b border-border">
-          <table className="w-full">
-            <thead className="sticky top-0 z-10 bg-bg-panel">
-              <tr>
-                <th className="label w-[64px] border-b border-border px-3 py-1.5 text-left">ACTION</th>
-                <th className="label w-[72px] border-b border-border px-3 py-1.5 text-left">TICKER</th>
-                <th className="label border-b border-border px-3 py-1.5 text-left">MANAGER</th>
-                <th className="label border-b border-border px-3 py-1.5 text-right">POSITION</th>
-                <th className="label w-20 border-b border-border px-3 py-1.5 text-right">CHANGE</th>
-                <th className="label w-24 border-b border-border px-3 py-1.5 text-right">AS OF</th>
-              </tr>
-            </thead>
-            <tbody>
-              {moves.map((m, i) => (
-                <tr
-                  key={`${m.manager}-${m.ticker}-${i}`}
-                  className={cn(
-                    'border-b border-border-dim',
-                    i % 2 === 0 ? 'bg-bg-row' : 'bg-bg-row-alt',
-                  )}
-                >
-                  <td className="px-3 py-1.5">
-                    <span className={cn(
-                      'num text-[9px] font-bold tracking-widest',
-                      m.action === 'NEW' ? 'text-up' : 'text-cyan',
-                    )}>
-                      {m.action}
-                    </span>
-                  </td>
-                  <td className="num px-3 py-1.5 text-[11px] font-bold text-ink">{m.ticker}</td>
-                  <td className="px-3 py-1.5 text-[11px] text-muted">{m.manager}</td>
-                  <td className="num px-3 py-1.5 text-right text-[10px] text-muted">{fmtBigUsd(m.value)}</td>
-                  <td className="num px-3 py-1.5 text-right text-[10px] text-up">
-                    {m.action === 'NEW'
-                      ? 'new'
-                      : m.pct_change != null
-                        ? `+${(m.pct_change * 100).toFixed(0)}%`
-                        : '—'}
-                  </td>
-                  <td className="num px-3 py-1.5 text-right text-[10px] text-faint">{m.period ?? '—'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </div>
-  )
-}
-
 // ── Dashboard ──────────────────────────────────────────────────────────────────
 
 export function Dashboard() {
@@ -1282,9 +1124,6 @@ export function Dashboard() {
             </div>
           </div>
         )}
-
-        {/* ── SMART MONEY (13F) ── */}
-        <SmartMoneySection />
 
         {/* ── CONGRESS ── */}
         <CongressSection />
