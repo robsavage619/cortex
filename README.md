@@ -55,6 +55,16 @@ Disclosed trades are ingested from public Senate eFD filings and rolled into **m
 
 ---
 
+## Institutional positioning — WHALES
+
+> *Every quarter, hedge funds and asset managers file their holdings with the SEC. CORTEX aggregates the picture: who owns what, how much, and whether the bet paid off.*
+
+The WHALES tab is a dedicated workspace for 13F institutional positioning. A **conviction-map bubble scatter** plots each name by position size and holder count — names in the top-right corner are big bets held by many. Below it: **most-crowded names** (by distinct holders), **biggest single bets** (by notional size), and a **clickable manager leaderboard** with a buy/sell action filter.
+
+Every filing row in both the Congress and WHALES tabs expands a **TradeImpactChart**: the stock's closing price on the exact trade date, its price today, and a plain-language verdict — "up 12.6% since the buy." The chart makes it immediate whether a disclosed position has worked.
+
+---
+
 ## The volatility / dollar-swing screen
 
 > *Rank the universe by how much it actually moves — average daily swing, peak swing, consistency, and range position.*
@@ -124,7 +134,10 @@ fastembed (local embeddings) · scikit-learn · React 18 · Vite · TypeScript �
 TanStack Query · lightweight-charts · Recharts. Tooling: `uv`, `ruff`, `pyright`.
 
 The whole thing runs as one command (`cortex serve`) on `127.0.0.1` — the API and the
-compiled SPA share a single origin and process.
+compiled SPA share a single origin and process. On Railway the SPA is compiled from
+source on every deploy (`nixpacks.toml` extends the Python build with Node 22.15.0 and
+runs `npm install && npm run build`), so the served frontend can never fall behind the
+Python API.
 
 ---
 
@@ -192,8 +205,24 @@ stocks. The pipeline is precision-first and self-validating:
    incidental (a second precision backstop). LLM calls are gated to the deployment so
    local runs never spend tokens.
 
-Surfaced in the portal as a "White House Buzz" reaction timeline, and evaluable through
-the same CAR event-study engine as the other signals (`event-study --signal executive`).
+Surfaced in the portal as a "White House Buzz" reaction timeline (scrollable, with
+per-mention source links and per-row significance glow), and evaluable through the same
+CAR event-study engine as the other signals (`event-study --signal executive`).
+
+### WHALES — institutional 13F positioning
+
+13F institutional buys were previously embedded in the main dashboard. They now live in
+a dedicated WHALES tab:
+
+- **Conviction-map bubble scatter** — position size vs. number of holders; top-right
+  quadrant = high-conviction, widely-held bets.
+- **Most-crowded names** — ranked by distinct holding managers.
+- **Biggest single bets** — ranked by notional position size.
+- **Manager leaderboard** — clickable, with buy/sell action filters.
+- **TradeImpactChart** — every filing row in both Congress and WHALES tabs expands to
+  show the stock's closing price on the exact trade date and its price today, with a
+  plain-language verdict ("up 12.6% since the buy"). Makes it immediate whether a
+  disclosed position has worked.
 
 ---
 
@@ -209,6 +238,11 @@ volume), with the data staying fresh on its own:
   volume-owning web process (volumes can't be shared between services), so congress /
   prices / White-House mentions refresh daily, 13F weekly, a factor-stat snapshot
   nightly, and a DuckDB backup weekly.
+- **Admin endpoints** — `/admin/sync/executive` spawns an exec-mention sync as a
+  subprocess on the live container, enabling manual seeding of the executive-mentions
+  table on a fresh deployment (Railway's `railway run` cannot write to the `/data`
+  volume, so this is the canonical bootstrap path). `/admin/snapshot-factors` and
+  `/admin/backup` follow the same isolated-subprocess pattern.
 - **Visible health** — a `/freshness` endpoint and dashboard strip show each source's
   staleness; any failed sync step posts to a webhook and is recorded, never silently
   dropped. DuckDB snapshots (Parquet export, pruned, optional S3) guard against

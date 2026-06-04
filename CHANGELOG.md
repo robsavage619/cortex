@@ -20,12 +20,40 @@ All notable changes to this project are documented here. The format is based on
   overrides for a deliberate local run.
 
 ### Changed
-- **Frontend is now built during the Railway deploy** instead of committing
-  `web/dist`. The NIXPACKS plan (`nixpacks.toml`) adds Node to the Python build and
-  runs `npm ci && npm run build`, so the served SPA can never go stale relative to
-  source. `web/dist` is no longer tracked in git.
+- **Frontend is now built during the Railway deploy** instead of committing `web/dist`.
+  The NIXPACKS plan (`nixpacks.toml`) extends the Python toolchain with Node and runs
+  `npm install && npm run build`, so the served SPA can never go stale relative to source.
+  `web/dist` is no longer tracked in git. Getting this to work required three rounds of
+  fixes against nixpkgs version pinning constraints:
+  - Railway's nixpkgs snapshot resolves `nodejs_22` to 22.10.0, which is below Vite 8's
+    minimum (20.19+ or 22.12+), causing the rolldown native binding to install the wrong
+    linux variant.
+  - `npm ci` strictly follows `package-lock.json` (generated on macOS), so
+    `@rolldown/binding-linux-x64-gnu` is absent and the build fails on the Railway host.
+    Switched to `npm install` so the linux binding is resolved at build time.
+  - Railway does not expand `[variables]` from `nixpacks.toml` as build-time env vars,
+    so `pip install uv==$NIXPACKS_UV_VERSION` expands to `pip install uv==` and fails.
+    The uv version is now hardcoded in `[phases.install]`.
+  - The nixpkgs snapshot contains no `nodejs_24` and caps `nodejs_22` at 22.10.0. The
+    final fix sidesteps nixpkgs entirely: the build phase downloads the official Node
+    22.15.0 tarball and prepends `/usr/local/bin` to `PATH`.
 
 ### Added
+- **WHALES tab** — dedicated institutional 13F view for hedge-fund and asset-manager
+  positioning. Surfaces a conviction-map bubble scatter (position size vs. number of
+  holders), most-crowded names, biggest single bets, and a clickable manager leaderboard
+  with action filters. 13F institutional buys were previously embedded in the main
+  dashboard; they now live here with their own full-page workspace.
+- **TradeImpactChart** — reusable price-at-trade visualization added to both the Congress
+  and Whales tabs. Every filing row expands to show the stock's price on the trade date
+  and how it has moved since, with a plain-language verdict ("up 12.6% since the buy").
+- **`/admin/sync/executive` endpoint** — `railway run` cannot write to Railway's `/data`
+  volume, so a POST endpoint was added that spawns the exec-mention sync as a subprocess
+  on the live container, enabling manual seeding of the executive-mentions table on a
+  fresh deployment.
+- **Per-row significance glow** on White House Buzz entries — left border accent and
+  subtle background tint (cyan = high significance, amber = medium) applied to each row
+  so significance is visible at a glance, not just in the badge chip.
 - **Executive-mentions signal** — organic discovery of companies named by the
   administration. Scans whitehouse.gov category RSS feeds (statements / fact-sheets /
   releases) for S&P 500 companies via a precision-first entity matcher (full-phrase
@@ -35,9 +63,23 @@ All notable changes to this project are documented here. The format is based on
   backstop. New `executive_mentions` table (schema v15), `event-study --signal
   executive`, and a dashboard "White House Buzz" reaction timeline (scrollable, with
   per-mention source links). CLI: `exec-mention add|list|sync`.
-- **Plain-English mode** — an app-wide toggle that translates the quant surface (factor
-  codes, z-scores, composite percentiles, section labels) into plain language so the app
-  reads clearly for non-quants.
+  - First iteration used GDELT for organic discovery but was rejected as too noisy
+    (global news co-occurrence, common-word company-name collisions). Replaced with
+    direct whitehouse.gov RSS ingestion, which carries full transcript text, exact dates,
+    and a guaranteed administration speaker.
+  - Entity matcher is precision-first: multi-word names match only as the full phrase;
+    single tokens only if distinctive (len ≥ 4, not in the common-word stoplist); no
+    bare-ticker matching (ICE / IP / WM acronym collisions); known generic-phrase names
+    skipped; nav-boilerplate guard.
+  - Verified on live data: 30 mentions / 22 tickers (Nvidia $500B commitment, Boeing,
+    Intel, DoorDash, Pfizer, Freeport…); price-reaction gate correctly signs pharma
+    price-cap deals as negative.
+- **Plain-English mode** — an app-wide toggle (persisted) that translates the quant
+  surface (factor codes, z-scores, composite percentiles, section labels) into plain
+  language so the app reads clearly for non-quants. `MOM/LVOL/SHR/VAL/QUAL` →
+  `Price trend / Steadiness / Efficiency / Value / Quality`; `+2.88z` → `top 0.2%`;
+  `DISCOVERED / ALGO BUYS` → `TOP PICKS / STRONG BUYS`. `lib/plain.ts` is the single
+  source of truth for term translations, reused across all views.
 - **Operations & deployment layer** — per-source refresh (`sync-all --only …`),
   per-source freshness telemetry (`/freshness` + a dashboard strip), failure alerting to
   a webhook, DuckDB snapshot/backups (`cortex backup`, pruning, optional S3), a nightly
