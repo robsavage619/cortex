@@ -12,22 +12,34 @@
   <a href="https://fastapi.tiangolo.com/"><img src="https://img.shields.io/badge/api-FastAPI-009688" alt="FastAPI"/></a>
   <a href="https://duckdb.org/"><img src="https://img.shields.io/badge/store-DuckDB%20%2B%20VSS-fff100" alt="DuckDB"/></a>
   <a href="web/"><img src="https://img.shields.io/badge/frontend-React%2018%20%2B%20Vite-61dafb" alt="React 18"/></a>
-  <img src="https://img.shields.io/badge/tests-69%20passing-34D399" alt="tests"/>
+  <img src="https://img.shields.io/badge/tests-85%20passing-34D399" alt="tests"/>
   <img src="https://img.shields.io/badge/paid%20APIs-zero-8B5CF6" alt="zero paid APIs"/>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-source--available-lightgrey" alt="license"/></a>
 </p>
 
 ---
 
-## The 60-second pitch
+## What this is
 
-Most retail "stock tools" optimise for action — buy buttons, green arrows, dopamine. **CORTEX optimises for the opposite:** slower, better-calibrated decisions, and intellectual honesty about edge.
-
-It is a single-operator quantitative research platform built end-to-end: a point-in-time multi-factor engine over the S&P universe, an alt-data ingestion layer sourced **entirely from free public filings**, a decision-quality system that scores the operator's own forecasting calibration, and a glass-premium React portal — all served from one Python process.
+CORTEX is a personal quantitative research platform I built end-to-end. It's a point-in-time multi-factor equity engine over the S&P universe, with an alt-data ingestion layer sourced entirely from free public filings, a decision-quality system that scores my own forecasting calibration, and a glass-premium React portal — all served from one Python process.
 
 It is deliberately **honest about what it has and hasn't found.** The backtest harness holds every candidate factor to a pre-registered, multiple-testing-corrected significance bar, and refuses to dress up noise as alpha. As of the latest run, **no factor clears the bar — so nothing trades live.** That restraint is the point.
 
-> **For reviewers:** build the portal (`cd web && npm install && npm run build`), then `uv run cortex serve` and open `http://127.0.0.1:8000`. The walkthrough below mirrors what you'll see.
+This repository is published as a portfolio piece. The source code is available for review; it is not intended to be deployed or extended by others. See the [license](LICENSE).
+
+---
+
+## Skills demonstrated
+
+| Domain | Specifics |
+|--------|-----------|
+| **Data engineering** | Public-filing ingestion pipelines from SEC EDGAR (Form 4, 13F, XBRL) and Senate eFD; bulk-index strategies; idempotent, dedup-keyed writes; rate-limit etiquette |
+| **Quantitative finance** | Point-in-time factor construction; Newey–West HAC-adjusted IC t-statistics; pre-registered hypothesis + OOS evaluation; long–short spread attribution |
+| **Backend** | FastAPI service with typed Pydantic models; DuckDB for columnar analytics + native vector search (HNSW via VSS extension); schema-versioned migrations |
+| **Frontend** | React 18 + TypeScript + Vite SPA; TanStack Query; lightweight-charts + Recharts; custom glass-premium design system |
+| **LLM integration** | fastembed local embeddings for RAG; Claude Haiku for significance classification, gated to production so local runs never bill |
+| **Deployment** | Railway (FastAPI + DuckDB on a persistent volume); nixpacks custom build (Python + Node in one image); cron-over-HTTP architecture for volume-owning service; automated freshness monitoring |
+| **Engineering process** | Conventional commits; 85 tests (calibration math, thesis CRUD, storage, RAG, backtest helpers); `ruff` + `pyright` across the whole repo |
 
 ---
 
@@ -39,7 +51,7 @@ It is deliberately **honest about what it has and hasn't found.** The backtest h
   <img src="docs/screenshots/dashboard.png" alt="CORTEX dashboard — discovered candidates with live factor z-score meters" width="100%"/>
 </p>
 
-The dashboard opens on the **CORTEX-ranked universe**: every candidate carries a composite z-score and a per-factor breakdown — momentum, low-vol, Sharpe, value, quality — rendered as live meters. **DISCOVERED** is the raw screen; **ALGO BUYS** are the engine's multi-factor picks, *built from the model, not hand-selected*; **STRONG BUY** holds your own hand-authored theses at conviction ≥ 4. The top strip carries calibration KPIs (Brier score, hit rate, review count) so decision quality is always in view.
+The dashboard opens on the **CORTEX-ranked universe**: every candidate carries a composite z-score and a per-factor breakdown — momentum, low-vol, Sharpe, value, quality — rendered as live meters. **DISCOVERED** is the raw screen; **ALGO BUYS** are the engine's multi-factor picks, built from the model, not hand-selected; **STRONG BUY** holds hand-authored theses at conviction ≥ 4. The top strip carries calibration KPIs (Brier score, hit rate, review count) so decision quality is always in view.
 
 ---
 
@@ -51,7 +63,7 @@ The dashboard opens on the **CORTEX-ranked universe**: every candidate carries a
   <img src="docs/screenshots/congress.png" alt="Congressional trade flow — monthly buy/sell flow, per-ticker pressure, and most active members" width="100%"/>
 </p>
 
-Disclosed trades are ingested from public Senate eFD filings and rolled into **monthly net buy/sell flow**, **per-ticker pressure**, and a **most-active-members** leaderboard with a buy/sell split. The median disclosure lag is surfaced directly — because alt-data that arrives 26 days late is a very different signal than one that arrives same-day, and the platform refuses to hide that.
+Disclosed trades are ingested from public Senate eFD filings and rolled into **monthly net buy/sell flow**, **per-ticker pressure**, and a **most-active-members** leaderboard with a buy/sell split. The median disclosure lag is surfaced directly — because alt-data that arrives 26 days late is a different signal than one that arrives same-day, and the platform refuses to hide that.
 
 ---
 
@@ -59,7 +71,7 @@ Disclosed trades are ingested from public Senate eFD filings and rolled into **m
 
 > *Every quarter, hedge funds and asset managers file their holdings with the SEC. CORTEX aggregates the picture: who owns what, how much, and whether the bet paid off.*
 
-The WHALES tab is a dedicated workspace for 13F institutional positioning. A **conviction-map bubble scatter** plots each name by position size and holder count — names in the top-right corner are big bets held by many. Below it: **most-crowded names** (by distinct holders), **biggest single bets** (by notional size), and a **clickable manager leaderboard** with a buy/sell action filter.
+The WHALES tab is a dedicated workspace for 13F institutional positioning. A **conviction-map bubble scatter** plots each name by position size and holder count — names in the top-right corner are big bets held by many. Below it: **most-crowded names**, **biggest single bets**, and a **clickable manager leaderboard** with a buy/sell action filter.
 
 Every filing row in both the Congress and WHALES tabs expands a **TradeImpactChart**: the stock's closing price on the exact trade date, its price today, and a plain-language verdict — "up 12.6% since the buy." The chart makes it immediate whether a disclosed position has worked.
 
@@ -97,7 +109,7 @@ Each ticker opens a four-tab workspace: **Overview** (trend, momentum, trading a
   <img src="docs/screenshots/calibration.png" alt="Calibration — reliability diagram, hit rate by conviction bucket, and per-author Brier score" width="100%"/>
 </p>
 
-Investing decisions are logged as **theses** with a required, explicit *falsifier* and a *review date*. A calibration engine then scores forecasting using **Brier scores** and per-conviction hit-rate buckets, plotting a reliability diagram that flags systematic over-confidence. A **process score** separates decision *quality* from outcome — a good decision with a bad result is still a good decision. A review queue surfaces theses whose review date has passed.
+Investing decisions are logged as **theses** with a required, explicit *falsifier* and a *review date*. A calibration engine then scores forecasting using **Brier scores** and per-conviction hit-rate buckets, plotting a reliability diagram that flags systematic over-confidence. A **process score** separates decision *quality* from outcome — a good decision with a bad result is still a good decision.
 
 ---
 
@@ -133,20 +145,13 @@ Investing decisions are logged as **theses** with a required, explicit *falsifie
 fastembed (local embeddings) · scikit-learn · React 18 · Vite · TypeScript ·
 TanStack Query · lightweight-charts · Recharts. Tooling: `uv`, `ruff`, `pyright`.
 
-The whole thing runs as one command (`cortex serve`) on `127.0.0.1` — the API and the
-compiled SPA share a single origin and process. On Railway the SPA is compiled from
-source on every deploy (`nixpacks.toml` extends the Python build with Node 22.15.0 and
-runs `npm install && npm run build`), so the served frontend can never fall behind the
-Python API.
+The whole thing runs as one command on `127.0.0.1` — the API and the compiled SPA share a single origin and process. On Railway the SPA is compiled from source on every deploy, so the served frontend can never fall behind the Python API.
 
 ---
 
-## What's inside
+## Factor model
 
-### CORTEX — point-in-time multi-factor engine
-
-A composite equity-ranking engine over the S&P universe. Factors are computed from
-**point-in-time** inputs (no lookahead) and standardised cross-sectionally each period:
+A composite equity-ranking engine over the S&P universe. Factors are computed from **point-in-time** inputs (no lookahead) and standardised cross-sectionally each period:
 
 | Factor   | Intuition                              | Source              |
 |----------|----------------------------------------|---------------------|
@@ -156,233 +161,60 @@ A composite equity-ranking engine over the S&P universe. Factors are computed fr
 | Value    | Earnings yield                         | EDGAR XBRL (PIT)    |
 | Quality  | Return on equity / capital efficiency  | EDGAR XBRL (PIT)    |
 
-Plus **alternative-data factors** ingested from public disclosures: congressional
-trading flow, Form 4 insider open-market buys, 13F institutional fund flow, and 13D
-activist stakes. The exact composite weighting is intentionally not documented here.
+Plus **alternative-data factors** ingested from public disclosures: congressional trading flow, Form 4 insider open-market buys, 13F institutional fund flow, and 13D activist stakes.
 
 ### Pre-registered backtest harness
 
-The differentiator. `cortex backtest` and `cortex congress-oos` evaluate factors against a
-**pre-registered hypothesis and an out-of-sample window**, and apply a
-multiple-testing-corrected significance gate. A factor is only called "real" when its
-information-coefficient t-statistic clears the bar — anything below is treated as noise.
+The differentiator. Every candidate factor is evaluated against a **pre-registered hypothesis and an out-of-sample window**, with a multiple-testing-corrected significance gate. A factor is only called "real" when its information-coefficient t-statistic clears the bar — anything below is treated as noise.
 
-Every reported t-statistic is **Newey–West HAC-adjusted** (Bartlett kernel), so the
-significance bar is robust to autocorrelation in the monthly IC series rather than
-assuming IID months. Alongside the per-factor ablation the harness reports:
+Every reported t-statistic is **Newey–West HAC-adjusted** (Bartlett kernel), so the significance bar is robust to autocorrelation in the monthly IC series. Alongside the per-factor ablation the harness reports the **long–short spread** (top-decile-minus-bottom-decile return of the composite, isolating factor content from market beta) and a **factor-IC correlation matrix** that answers whether the alt-data flow factors carry information beyond price momentum, or merely re-express it.
 
-- **The long–short spread** — top-decile-minus-bottom-decile return of the composite,
-  which strips market beta to isolate the factor's directional content (a long-only
-  decile mostly inherits the market's drift).
-- **A factor-IC correlation matrix** — answering whether the alt-data flow factors
-  (congressional / insider / 13F) carry information *beyond* price momentum, or merely
-  re-express it. (They turn out to be weakly correlated with the price factors — the
-  flow thesis is additive, not redundant.)
+The harness explicitly reports its own caveats — survivorship bias, sparse alt-data coverage, transaction-cost assumptions — **in the output itself**. As of the latest run no candidate clears the bar, so the platform does no live trading. Honest negative results, surfaced rather than buried.
 
-The harness explicitly reports its own caveats (survivorship bias from a
-current-membership universe, sparse coverage on alt-data factors, transaction-cost
-assumptions) **in the output itself**. As of the latest run no candidate factor clears
-the bar, so the platform does no live trading. Honest negative results, surfaced rather
-than buried.
+### Executive-mentions signal
 
-### Executive-mentions signal — organic discovery from White House transcripts
-
-A signal the filing-based factors can't see: companies the administration **names in
-public** (a fact-sheet investment, a press-conference endorsement), which have moved
-stocks. The pipeline is precision-first and self-validating:
-
-1. **Source** — scans whitehouse.gov category RSS feeds (statements, fact-sheets,
-   releases), which carry full transcript text with exact dates and a guaranteed
-   administration speaker. (News co-occurrence was tried first and rejected as too noisy.)
-2. **Entity matching** — distinctive S&P 500 company names only: multi-word names match
-   as a full phrase ("State Street", never "State"), single tokens only if distinctive,
-   no bare-ticker matches (which collide with acronyms like ICE / IP), plus common-word
-   stoplists.
-3. **Reaction gate** — each candidate is measured by its abnormal return vs SPY at +1/+5/
-   +20 trading days. This is both the "did it actually move" payoff and a noise filter: a
-   mention with no reaction self-drops.
-4. **Significance** — a Claude Haiku verdict classifies each mention as meaningful vs
-   incidental (a second precision backstop). LLM calls are gated to the deployment so
-   local runs never spend tokens.
-
-Surfaced in the portal as a "White House Buzz" reaction timeline (scrollable, with
-per-mention source links and per-row significance glow), and evaluable through the same
-CAR event-study engine as the other signals (`event-study --signal executive`).
-
-### WHALES — institutional 13F positioning
-
-13F institutional buys were previously embedded in the main dashboard. They now live in
-a dedicated WHALES tab:
-
-- **Conviction-map bubble scatter** — position size vs. number of holders; top-right
-  quadrant = high-conviction, widely-held bets.
-- **Most-crowded names** — ranked by distinct holding managers.
-- **Biggest single bets** — ranked by notional position size.
-- **Manager leaderboard** — clickable, with buy/sell action filters.
-- **TradeImpactChart** — every filing row in both Congress and WHALES tabs expands to
-  show the stock's closing price on the exact trade date and its price today, with a
-  plain-language verdict ("up 12.6% since the buy"). Makes it immediate whether a
-  disclosed position has worked.
+A signal the filing-based factors can't see: companies the administration **names in public** (a fact-sheet investment, a press-conference endorsement). The pipeline is precision-first: it sources from official White House transcripts, applies a multi-stage entity matcher to avoid false positives, gates each candidate on its abnormal return vs SPY, and uses Claude Haiku as a final significance classifier — gated to production so local runs never spend tokens. Surfaced in the portal as a "White House Buzz" reaction timeline with per-mention source links and per-row significance glow.
 
 ---
 
 ## Operations & deployment
 
-Built to run unattended on a single Railway service (FastAPI + DuckDB on a persistent
-volume), with the data staying fresh on its own:
+Built to run unattended on a single Railway service with data staying fresh on its own:
 
-- **Per-source refresh on independent cadences** — `sync-all --only congress,executive,…`;
-  the full refresh runs as an isolated subprocess so a memory-heavy sync can't take down
-  the live web server.
-- **Scheduled freshness** — Railway cron services trigger work over HTTP against the
-  volume-owning web process (volumes can't be shared between services), so congress /
-  prices / White-House mentions refresh daily, 13F weekly, a factor-stat snapshot
-  nightly, and a DuckDB backup weekly.
-- **Admin endpoints** — `/admin/sync/executive` spawns an exec-mention sync as a
-  subprocess on the live container, enabling manual seeding of the executive-mentions
-  table on a fresh deployment (Railway's `railway run` cannot write to the `/data`
-  volume, so this is the canonical bootstrap path). `/admin/snapshot-factors` and
-  `/admin/backup` follow the same isolated-subprocess pattern.
-- **Visible health** — a `/freshness` endpoint and dashboard strip show each source's
-  staleness; any failed sync step posts to a webhook and is recorded, never silently
-  dropped. DuckDB snapshots (Parquet export, pruned, optional S3) guard against
-  corruption.
-
----
-
-## Data engineering notes (hard-won)
-
-Free public filing systems are gloriously undocumented. A few things this codebase gets
-right that most tutorials get wrong:
-
-- **SEC Form 4 filenames are not standardised.** `form4.xml` only resolves for ~half of
-  filers; filing agents use custom names. The canonical resolution path is each filer's
-  `submissions/CIK……json` → `primaryDocument`, stripping the XSLT rendering subdirectory
-  to reach the actual data file.
-- **Bulk index over per-company queries.** Insider/activism backfills parse SEC's
-  quarterly `form.idx` bulk indexes rather than issuing hundreds of thousands of
-  per-filing guesses — orders of magnitude fewer requests.
-- **Rate-limit etiquette.** Bounded worker pools, exponential back-off on HTTP 429, and a
-  compliant, configurable `User-Agent` keep ingestion within SEC fair-access limits.
-- **Idempotent writes.** Every sync is safe to re-run: rows carry deterministic SHA-256
-  dedup keys with `ON CONFLICT DO NOTHING`, so partial runs never duplicate or corrupt.
-- **Fail visibly.** Skipped or degraded records are surfaced, never silently dropped.
-
----
-
-## Quickstart
-
-```bash
-# 1. Install (Python 3.12, uv)
-uv sync
-
-# 2. Provide an SEC contact identity (required by SEC fair-access policy)
-#    Set CORTEX_SEC_USER_AGENT to "Your Name your-email@example.com" in a .env file.
-
-# 3. Initialise the columnar store
-uv run cortex db-init
-
-# 4. (optional) Ingest public data — all free sources
-uv run cortex congress-sync          # Senate disclosures
-uv run cortex insiders-sync          # Form 4 open-market buys
-uv run cortex funds-sync             # 13F institutional flow
-uv run cortex fundamentals-sync      # point-in-time EDGAR fundamentals
-
-# 5. Rank the universe and check the evidence
-uv run cortex discover               # CORTEX multi-factor ranking
-uv run cortex backtest               # pre-registered factor evaluation
-
-# 6. Build the portal and serve everything from one process
-(cd web && npm install && npm run build)
-uv run cortex serve                  # http://127.0.0.1:8000
-```
-
-### CLI surface
-
-`db-init` · `new` · `review` · `calibration` · `mirror` · `rag-index` · `discover` ·
-`vol-screen` · `congress-sync` · `house-sync` · `funds-sync` · `funds-backfill` ·
-`insiders-sync` · `activism-sync` · `fundamentals-sync` · `exec-mention` · `event-study` ·
-`congress-oos` · `backtest` · `snapshot-factors` · `sync-all` · `backup` · `serve` ·
-`trigger-refresh` · `trigger-snapshot` · `trigger-backup`
-
-Run `uv run cortex <command> --help` for arguments.
-
-### Configuration
-
-All runtime config comes from the environment (or a local, git-ignored `.env`). Nothing
-sensitive is committed.
-
-| Variable                 | Purpose                                              |
-|--------------------------|------------------------------------------------------|
-| `CORTEX_SEC_USER_AGENT`  | SEC EDGAR contact identity (`Name email`) — required |
-| `CORTEX_DUCKDB_PATH`     | Override the DuckDB path (must end in `.db`) — point at the volume on Railway |
-| `CORTEX_VAULT_DIR`       | Markdown mirror output directory                     |
-| `CORTEX_RESEARCH_DIR`    | Research-note source for the RAG index               |
-| `CORTEX_CLAUDE_BIN`      | Explicit path to the `claude` CLI (LLM analysis)     |
-| `ANTHROPIC_API_KEY`      | Claude key for House-PDF OCR + executive-mention significance |
-| `CORTEX_ALLOW_LLM`       | Force-enable Anthropic calls locally (default: only on Railway) |
-| `CORTEX_ALERT_WEBHOOK`   | Optional Discord/Slack webhook for sync-failure alerts |
-| `CORTEX_BACKUP_S3_URI`   | Optional off-box backup target for DuckDB snapshots  |
-| `CORTEX_REFRESH_URL` / `CORTEX_AUTH_USER` / `CORTEX_AUTH_PASS` | Used by the cron `trigger-*` commands to reach the web app |
-| `VITE_LOGODEV_TOKEN`     | Optional logo enhancement; UI falls back to monograms|
-
-Deployment specifics (Railway services, cron schedules, volume notes) live in
-[`deploy/README.md`](deploy/README.md).
+- **Per-source refresh on independent cadences** — the full refresh runs as an isolated subprocess so a memory-heavy sync can't take down the live web server.
+- **Scheduled freshness** — Railway cron services trigger work over HTTP against the volume-owning web process (Railway volumes can only attach to one service). Congress / prices / White House mentions refresh daily; 13F weekly; a factor-stat snapshot nightly; DuckDB backup weekly.
+- **Visible health** — a `/freshness` endpoint and dashboard strip show each source's staleness; failed sync steps post to a webhook and are recorded, never silently dropped. DuckDB snapshots (Parquet export, pruned, optional S3) guard against corruption.
 
 ---
 
 ## Engineering quality
 
-- **85 tests** concentrated on the pure-logic core — calibration math, thesis CRUD,
-  storage, RAG, and the backtest's scoring helpers — plus HTTP-mocked data sources
-  (`respx`). The ingestion, API, and CLI layers are exercised manually, not yet in the
-  automated suite.
-- **Clean static analysis:** `ruff check` and `ruff format` pass repo-wide; `pyright`
-  (basic) reports zero errors across `src/`.
+- **85 tests** concentrated on the pure-logic core — calibration math, thesis CRUD, storage, RAG, and backtest scoring helpers — plus HTTP-mocked data sources (`respx`).
+- **Clean static analysis:** `ruff check` and `ruff format` pass repo-wide; `pyright` (basic) reports zero errors across `src/`.
 - **Strict tooling:** `ruff` (format + lint + isort), `pyright` (basic), `uv` lockfile.
-- **Typed throughout:** `from __future__ import annotations`, `X | None` unions,
-  dataclasses, Pydantic request models.
+- **Typed throughout:** `from __future__ import annotations`, `X | None` unions, dataclasses, Pydantic request models.
 - **Idempotent, schema-versioned storage** with a migration table.
-
-```bash
-uv run pytest        # tests + coverage
-uv run ruff check src/
-uv run pyright src/
-```
 
 ---
 
 ## Security & privacy posture
 
-This repository is published as a portfolio piece and is hardened accordingly:
-
-- **No secrets, no PII in source.** Contact identities, tokens, and machine-specific
-  paths are read from the environment — never hardcoded. `.env*` files are both
-  git-ignored and on a filesystem deny-list.
-- **No data committed.** The DuckDB store, coverage artefacts, and caches are
-  git-ignored; the repo ships code, not anyone's positions or research.
-- **Local-only by default.** The server binds `127.0.0.1`; CORS is restricted to the
-  local dev origin; the API is read-mostly with a small typed write surface.
-- **Safe subprocess + DB access.** The LLM analysis path invokes the `claude` CLI with
-  argument vectors (no shell string interpolation); all SQL uses parameterised queries.
-- **Public data only.** Every external source is a free public disclosure feed (SEC
-  EDGAR, Senate eFD) accessed within published rate-limit and fair-access policies.
+- **No secrets, no PII in source.** Contact identities, tokens, and machine-specific paths are read from the environment — never hardcoded.
+- **No data committed.** The DuckDB store, coverage artefacts, and caches are git-ignored; the repo ships code, not positions or research.
+- **Local-only by default.** The server binds `127.0.0.1`; CORS is restricted to the local dev origin; the API is read-mostly with a small typed write surface.
+- **Safe subprocess + DB access.** The LLM analysis path invokes the `claude` CLI with argument vectors (no shell string interpolation); all SQL uses parameterised queries.
+- **Public data only.** Every external source is a free public disclosure feed (SEC EDGAR, Senate eFD) accessed within published rate-limit and fair-access policies.
 
 ---
 
 ## Disclaimer
 
-CORTEX is a personal research and decision-support tool. It is **not financial advice**, it
-does not execute trades, and it makes no recommendations. Nothing here is an offer or
-solicitation. Markets are risky; past performance does not predict future results.
+CORTEX is a personal research and decision-support tool. It is **not financial advice**, does not execute trades, and makes no recommendations. Nothing here is an offer or solicitation.
 
 ---
 
 ## License
 
-**Source-available, all rights reserved.** This repository is published for portfolio
-review and evaluation only. You may read the code; you may **not** copy, modify, reuse,
-redistribute, or deploy it (in whole or in part) without prior written permission. See
-[`LICENSE`](LICENSE) for the full terms.
+**Source-available, all rights reserved.** This repository is published for portfolio review and evaluation only. You may read the code; you may **not** copy, modify, reuse, redistribute, or deploy it (in whole or in part) without prior written permission. See [`LICENSE`](LICENSE) for the full terms.
 
 © Rob Savage. All rights reserved.
