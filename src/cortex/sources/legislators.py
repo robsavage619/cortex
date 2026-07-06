@@ -63,7 +63,13 @@ def _load_yaml(url: str, *, retries: int = 3) -> None:
             members = yaml.safe_load(resp.text)
             break
         except Exception as exc:
-            log.warning("legislators: fetch attempt %d/%d for %s failed: %s", attempt, retries, url, exc)
+            log.warning(
+                "legislators: fetch attempt %d/%d for %s failed: %s",
+                attempt,
+                retries,
+                url,
+                exc,
+            )
             if attempt == retries:
                 return
             import time
@@ -94,7 +100,13 @@ def _load_yaml(url: str, *, retries: int = 3) -> None:
             "party": latest.get("party", ""),
             "state": latest.get("state", ""),
             "district": latest.get("district"),
-            "chamber": "senate" if term_type == "sen" else "house" if term_type == "rep" else "",
+            "chamber": (
+                "senate"
+                if term_type == "sen"
+                else "house"
+                if term_type == "rep"
+                else ""
+            ),
             "photo_url": f"{_PHOTO_BASE}/{bid[0]}/{bid}.jpg",
             "gender": m.get("bio", {}).get("gender", ""),
             "birthday": m.get("bio", {}).get("birthday", ""),
@@ -118,7 +130,11 @@ def _ensure_loaded() -> None:
         log.info("legislators: loading member roster…")
         _load_yaml(_CURRENT_URL)
         _load_yaml(_HISTORICAL_URL)
-        log.info("legislators: %d members cached (%d names)", len(_bid_to_info), len(_name_to_bid))
+        log.info(
+            "legislators: %d members cached (%d names)",
+            len(_bid_to_info),
+            len(_name_to_bid),
+        )
         _loaded = True
 
 

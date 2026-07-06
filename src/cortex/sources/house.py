@@ -249,7 +249,8 @@ def _ocr_pages_with_claude(
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
         raise HouseSourceError(
-            "ANTHROPIC_API_KEY not set — export it in your shell to enable scanned PDF OCR"
+            "ANTHROPIC_API_KEY not set — export it in your shell to enable"
+            " scanned PDF OCR"
         )
 
     client = anthropic.Anthropic(api_key=api_key)

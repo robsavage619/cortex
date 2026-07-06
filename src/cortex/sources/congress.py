@@ -525,8 +525,8 @@ def list_trades(
     with connect(db_path, read_only=True) as conn:
         rows = conn.execute(
             f"""
-            SELECT senator, ticker, transaction_type, amount,
-                   transaction_date, disclosure_date, asset_description, report_url, chamber
+            SELECT senator, ticker, transaction_type, amount, transaction_date,
+                   disclosure_date, asset_description, report_url, chamber
             FROM congress_trades
             {where}
             ORDER BY COALESCE(disclosure_date, transaction_date) DESC NULLS LAST

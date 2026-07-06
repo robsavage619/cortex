@@ -20,6 +20,15 @@ def _cmd_db_init(args: argparse.Namespace) -> None:  # noqa: ARG001
     print("Done.")
 
 
+def _cmd_audit_integrity(args: argparse.Namespace) -> None:
+    from cortex.audit import format_report, run_audit
+    from cortex.config import load_settings
+
+    settings = load_settings()
+    report = run_audit(settings.duckdb_path)
+    print(report.to_json() if args.json else format_report(report))
+
+
 def _cmd_new(args: argparse.Namespace) -> None:
     from cortex.config import load_settings
     from cortex.thesis import create
@@ -179,7 +188,8 @@ def _cmd_house_sync(args: argparse.Namespace) -> None:
                 progress=lambda msg: print(f"  {msg}"),
             )
             print(
-                f"Backfill complete — {total} new trades since {args.backfill_from_year}"
+                f"Backfill complete — {total} new trades"
+                f" since {args.backfill_from_year}"
             )
         else:
             since = date.today() - timedelta(days=args.since_days)
@@ -432,6 +442,15 @@ def _cmd_backtest(args: argparse.Namespace) -> None:
     print()
     print("=" * 80)
     print(f"CORTEX BACKTEST  {rep.start} → {rep.end}  ({rep.n_names} names, monthly)")
+    pct = (
+        100 * rep.n_tickers_priced / rep.n_tickers_requested
+        if rep.n_tickers_requested
+        else 0.0
+    )
+    print(
+        f"  Price coverage: {rep.n_tickers_priced}/{rep.n_tickers_requested}"
+        f" tickers ({pct:.1f}%)"
+    )
     print("=" * 80)
     print(
         f"  {'BENCHMARK (EW S&P500)':30} "
@@ -703,6 +722,13 @@ def main() -> None:
     sub = parser.add_subparsers(dest="command", required=True)
 
     sub.add_parser("db-init", help="Create / migrate the DuckDB schema")
+
+    audit_p = sub.add_parser(
+        "audit-integrity", help="Read-only data-integrity audit of the DuckDB"
+    )
+    audit_p.add_argument(
+        "--json", action="store_true", help="Emit machine-readable JSON"
+    )
 
     new_p = sub.add_parser("new", help="Create a new thesis")
     new_p.add_argument("--ticker", required=True, nargs="+", metavar="TICKER")
@@ -998,6 +1024,7 @@ def main() -> None:
 
     dispatch = {
         "db-init": _cmd_db_init,
+        "audit-integrity": _cmd_audit_integrity,
         "new": _cmd_new,
         "review": _cmd_review,
         "calibration": _cmd_calibration,
