@@ -281,7 +281,13 @@ def sync_all_managers(db_path: Path, *, historical: bool = False) -> int:
 
 
 def store_fund_moves(moves: list[FundMove], db_path: Path) -> int:
-    """Upsert moves into fund_holdings. Returns the count of new rows."""
+    """Upsert moves into fund_holdings. Returns the count of new rows.
+
+    A stored EXIT is terminal: a re-sync that recomputes the same
+    (manager, ticker, period) as TRIM/ADD keeps the EXIT row untouched —
+    partial re-fetches must not resurrect a position the manager closed.
+    A genuinely corrected EXIT requires manual repair.
+    """
     from cortex.storage.db import connect
 
     if not moves:
@@ -296,11 +302,36 @@ def store_fund_moves(moves: list[FundMove], db_path: Path) -> int:
                 shares, prev_shares, value, pct_change, period
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT (id) DO UPDATE SET
-                action = excluded.action,
-                shares = excluded.shares,
-                prev_shares = excluded.prev_shares,
-                value = excluded.value,
-                pct_change = excluded.pct_change
+                action = CASE
+                    WHEN fund_holdings.action = 'EXIT'
+                         AND excluded.action <> 'EXIT'
+                    THEN fund_holdings.action
+                    ELSE excluded.action
+                END,
+                shares = CASE
+                    WHEN fund_holdings.action = 'EXIT'
+                         AND excluded.action <> 'EXIT'
+                    THEN fund_holdings.shares
+                    ELSE excluded.shares
+                END,
+                prev_shares = CASE
+                    WHEN fund_holdings.action = 'EXIT'
+                         AND excluded.action <> 'EXIT'
+                    THEN fund_holdings.prev_shares
+                    ELSE excluded.prev_shares
+                END,
+                value = CASE
+                    WHEN fund_holdings.action = 'EXIT'
+                         AND excluded.action <> 'EXIT'
+                    THEN fund_holdings.value
+                    ELSE excluded.value
+                END,
+                pct_change = CASE
+                    WHEN fund_holdings.action = 'EXIT'
+                         AND excluded.action <> 'EXIT'
+                    THEN fund_holdings.pct_change
+                    ELSE excluded.pct_change
+                END
             """,
             [
                 (

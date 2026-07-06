@@ -51,7 +51,9 @@ class ActivistEvent:
 
     @property
     def dedupe_id(self) -> str:
-        raw = f"{self.subject_cik}|{self.filing_date.isoformat()}"
+        # filer is in the key: two activists filing against the same company
+        # on the same day are distinct stakes, not duplicates.
+        raw = f"{self.subject_cik}|{self.filer}|{self.filing_date.isoformat()}"
         return hashlib.sha256(raw.encode()).hexdigest()[:16]
 
 

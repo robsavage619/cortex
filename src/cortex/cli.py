@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import logging
 from datetime import date, timedelta
+from pathlib import Path
 
 log = logging.getLogger(__name__)
 
@@ -212,12 +213,24 @@ def _cmd_funds_sync(args: argparse.Namespace) -> None:  # noqa: ARG001
     print(f"Funds sync complete — {new} new/updated moves")
 
 
+def _rebuild_table(db_path: Path, table: str) -> None:
+    from cortex.storage.db import connect
+
+    with connect(db_path) as conn:
+        row = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()
+        n = int(row[0]) if row else 0
+        conn.execute(f"DELETE FROM {table}")
+    print(f"--rebuild: deleted {n} rows from {table}", flush=True)
+
+
 def _cmd_insiders_sync(args: argparse.Namespace) -> None:
     from cortex.config import load_settings
     from cortex.sources.insiders import fetch_insider_buys_datasets
     from cortex.sources.universe import sp500_tickers
 
     settings = load_settings()
+    if args.rebuild:
+        _rebuild_table(settings.duckdb_path, "insider_buys")
     universe = set(sp500_tickers())
     print(
         f"Fetching Form 4 purchases for {len(universe)} tickers "
@@ -236,6 +249,8 @@ def _cmd_activism_sync(args: argparse.Namespace) -> None:
     from cortex.sources.universe import sp500_tickers
 
     settings = load_settings()
+    if args.rebuild:
+        _rebuild_table(settings.duckdb_path, "activist_stakes")
     universe = set(sp500_tickers())
     print(
         f"Fetching SC 13D filings targeting {len(universe)} S&P500 tickers "
@@ -845,6 +860,11 @@ def main() -> None:
         metavar="YYYY",
         help="Earliest year to backfill (default: 2017)",
     )
+    ins_p.add_argument(
+        "--rebuild",
+        action="store_true",
+        help="DELETE all insider_buys rows first (dedupe-key change re-ingest)",
+    )
 
     act_p = sub.add_parser(
         "activism-sync",
@@ -856,6 +876,11 @@ def main() -> None:
         default=2014,
         metavar="YYYY",
         help="Earliest year to backfill (default: 2014)",
+    )
+    act_p.add_argument(
+        "--rebuild",
+        action="store_true",
+        help="DELETE all activist_stakes rows first (dedupe-key change re-ingest)",
     )
     sub.add_parser("fundamentals-sync", help="Sync point-in-time EDGAR fundamentals")
 

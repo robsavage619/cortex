@@ -5,6 +5,7 @@ import io
 import zipfile
 
 from cortex.sources.insiders import (
+    InsiderBuyEvent,
     _parse_dataset_date,
     _parse_quarter_zip,
     _role_from_relationship,
@@ -98,3 +99,75 @@ def test_parse_quarter_zip_skips_zero_and_bad_rows():
     )
     events = _parse_quarter_zip(_make_zip(submission, owner, trans), {"AAPL"})
     assert events == []
+
+
+def _buy(**overrides) -> InsiderBuyEvent:
+    base = dict(
+        ticker="AAPL",
+        issuer_cik="0000320193",
+        filer_cik="1234567",
+        filer_name="Tim Insider",
+        filer_role="officer",
+        transaction_date=dt.date(2024, 2, 2),
+        filing_date=dt.date(2024, 2, 5),
+        shares=1000.0,
+        value_usd=150000.0,
+        accession="acc-1",
+    )
+    base.update(overrides)
+    return InsiderBuyEvent(**base)
+
+
+def test_dedupe_id_keeps_same_day_lots_distinct():
+    lot_a = _buy(shares=1000.0)
+    lot_b = _buy(shares=500.0)
+    assert lot_a.dedupe_id != lot_b.dedupe_id
+
+
+def test_dedupe_id_distinct_per_accession():
+    original = _buy(accession="acc-1")
+    amendment = _buy(accession="acc-1a")
+    assert original.dedupe_id != amendment.dedupe_id
+
+
+def test_dedupe_id_stable_for_identical_event():
+    assert _buy().dedupe_id == _buy().dedupe_id
+
+
+def test_parse_quarter_zip_carries_accession():
+    submission = (
+        "ACCESSION_NUMBER\tFILING_DATE\tDOCUMENT_TYPE\tISSUERCIK\tISSUERTRADINGSYMBOL\n"
+        "acc-1\t05-FEB-2024\t4\t320193\tAAPL\n"
+    )
+    owner = (
+        "ACCESSION_NUMBER\tRPTOWNERCIK\tRPTOWNERNAME\tRPTOWNER_RELATIONSHIP\n"
+        "acc-1\t0001234567\tTim Insider\tOfficer\n"
+    )
+    trans = (
+        "ACCESSION_NUMBER\tTRANS_DATE\tTRANS_CODE\tTRANS_SHARES"
+        "\tTRANS_PRICEPERSHARE\tTRANS_ACQUIRED_DISP_CD\n"
+        "acc-1\t02-FEB-2024\tP\t1000\t150.0\tA\n"
+        "acc-1\t02-FEB-2024\tP\t500\t151.0\tA\n"  # second same-day lot
+    )
+    events = _parse_quarter_zip(_make_zip(submission, owner, trans), {"AAPL"})
+    assert len(events) == 2
+    assert all(e.accession == "acc-1" for e in events)
+    assert events[0].dedupe_id != events[1].dedupe_id
+
+
+def test_activist_dedupe_id_distinct_per_filer():
+    from cortex.sources.activism import ActivistEvent
+
+    pershing = ActivistEvent(
+        ticker="MSFT",
+        subject_cik="0000789019",
+        filer="Pershing Square",
+        filing_date=dt.date(2024, 3, 15),
+    )
+    elliott = ActivistEvent(
+        ticker="MSFT",
+        subject_cik="0000789019",
+        filer="Elliott Management",
+        filing_date=dt.date(2024, 3, 15),
+    )
+    assert pershing.dedupe_id != elliott.dedupe_id

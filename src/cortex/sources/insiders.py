@@ -80,10 +80,25 @@ class InsiderBuyEvent:
     filing_date: date
     shares: float
     value_usd: float
+    # Not persisted — used only to build the dedupe id at ingest. Rows read
+    # back from the DB carry the default.
+    accession: str = ""
 
     @property
     def dedupe_id(self) -> str:
-        raw = f"{self.issuer_cik}|{self.filer_cik}|{self.transaction_date.isoformat()}"
+        # shares + accession keep distinct same-day lots by the same filer,
+        # which the old (issuer, filer, date) key silently collapsed. An
+        # amended filing gets a new accession and therefore a new row — a far
+        # smaller duplication risk than the collapse it replaces.
+        raw = "|".join(
+            [
+                self.issuer_cik,
+                self.filer_cik,
+                self.transaction_date.isoformat(),
+                f"{self.shares:g}",
+                self.accession,
+            ]
+        )
         return hashlib.sha256(raw.encode()).hexdigest()[:16]
 
 
@@ -205,6 +220,7 @@ def _parse_quarter_zip(content: bytes, universe: set[str]) -> list[InsiderBuyEve
                     filing_date=filing_date,
                     shares=shares,
                     value_usd=shares * price,
+                    accession=acc,
                 )
             )
     return events
