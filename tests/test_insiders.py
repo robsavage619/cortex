@@ -101,8 +101,8 @@ def test_parse_quarter_zip_skips_zero_and_bad_rows():
     assert events == []
 
 
-def _buy(**overrides) -> InsiderBuyEvent:
-    base = dict(
+def _buy(**overrides: object) -> InsiderBuyEvent:
+    base: dict = dict(
         ticker="AAPL",
         issuer_cik="0000320193",
         filer_cik="1234567",
@@ -115,7 +115,7 @@ def _buy(**overrides) -> InsiderBuyEvent:
         accession="acc-1",
     )
     base.update(overrides)
-    return InsiderBuyEvent(**base)
+    return InsiderBuyEvent(**base)  # type: ignore[arg-type]
 
 
 def test_dedupe_id_keeps_same_day_lots_distinct():

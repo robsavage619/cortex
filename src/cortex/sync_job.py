@@ -268,8 +268,8 @@ def run_full_sync(
                 done(
                     "congress",
                     new_s + new_h,
-                    f"done — {len(senate) + len(house)} trades "
-                    f"({new_s + new_h} new)",
+                    f"done — senate {len(senate)} fetched/{new_s} new, "
+                    f"house {len(house)} fetched/{new_h} new",
                 )
             except Exception as exc:  # noqa: BLE001 - record and continue
                 failed("congress", exc)
@@ -277,10 +277,23 @@ def run_full_sync(
         if "funds" in selected:
             try:
                 step("funds", "running")
-                from cortex.sources.funds import sync_all_managers
+                from cortex.sources.funds import MANAGERS, sync_all_managers
 
-                new_funds = sync_all_managers(db_path)
-                done("funds", new_funds, f"done — {new_funds} new moves")
+                breakdown: dict[str, str] = {}
+                new_funds = sync_all_managers(db_path, breakdown=breakdown)
+                n_failed = sum(
+                    1 for v in breakdown.values() if v.startswith("FAILED")
+                )
+                per_manager = "; ".join(
+                    f"{m}:{v}" for m, v in sorted(breakdown.items())
+                )
+                done(
+                    "funds",
+                    new_funds,
+                    f"done — {new_funds} new moves, "
+                    f"{len(MANAGERS) - n_failed}/{len(MANAGERS)} managers ok"
+                    f" [{per_manager}]",
+                )
             except Exception as exc:  # noqa: BLE001 - record and continue
                 failed("funds", exc)
 

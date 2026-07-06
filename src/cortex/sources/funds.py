@@ -259,11 +259,18 @@ def fetch_all_manager_moves(
     return all_moves
 
 
-def sync_all_managers(db_path: Path, *, historical: bool = False) -> int:
+def sync_all_managers(
+    db_path: Path,
+    *,
+    historical: bool = False,
+    breakdown: dict[str, str] | None = None,
+) -> int:
     """Fetch + store moves for every curated manager. Returns new-row count.
 
     When historical=True, walks all filing pairs back to 2014 instead of just
-    the latest two.
+    the latest two. When ``breakdown`` is passed, it is filled with a
+    per-manager result ("<new rows>" or "FAILED: <reason>") so a partial run
+    is auditable instead of a single opaque total.
     """
     total_new = 0
     fetch = fetch_all_manager_moves if historical else fetch_manager_moves
@@ -272,8 +279,13 @@ def sync_all_managers(db_path: Path, *, historical: bool = False) -> int:
             moves = fetch(manager, cik)
         except FundsSourceError as exc:
             log.warning("funds: skipping %s: %s", manager, exc)
+            if breakdown is not None:
+                breakdown[manager] = f"FAILED: {exc}"
             continue
-        total_new += store_fund_moves(moves, db_path)
+        new = store_fund_moves(moves, db_path)
+        total_new += new
+        if breakdown is not None:
+            breakdown[manager] = str(new)
     return total_new
 
 

@@ -463,12 +463,79 @@ def existing_senate_report_urls(db_path: Path) -> set[str]:
     return {str(r[0]) for r in rows if r and r[0]}
 
 
+# Plausible US equity ticker: 1-5 capitals, optional class suffix (BRK.B, BF/B).
+# Rows failing this are stored with ticker_ok = FALSE (quarantined, never
+# silently dropped) so parse corruption stays countable.
+VALID_TICKER_RE = re.compile(r"^[A-Z]{1,5}([./][A-Z]{1,2})?$")
+
+
+def ticker_ok(ticker: str) -> bool:
+    return bool(VALID_TICKER_RE.match(ticker or ""))
+
+
+def mark_amended_duplicates(db_path: Path) -> int:
+    """Mark superseded rows in natural-key duplicate groups as amended.
+
+    Heuristic, not eFD lineage: rows identical on (senator, ticker, type,
+    amount, transaction_date, chamber) but stored under different report_urls
+    are treated as original + amendment(s); every row except the one with the
+    newest disclosure_date (report_url as tie-break) is marked
+    ``amended = TRUE``. The backtest loader excludes amended rows.
+    Returns the number of rows newly marked.
+    """
+    from cortex.storage.db import connect
+
+    with connect(db_path) as conn:
+        row = conn.execute(
+            "SELECT count(*) FROM congress_trades WHERE amended"
+        ).fetchone()
+        before = int(row[0]) if row else 0
+        conn.execute(
+            """
+            UPDATE congress_trades SET amended = TRUE
+            WHERE id IN (
+                SELECT id FROM (
+                    SELECT id,
+                           row_number() OVER (
+                               PARTITION BY senator, ticker, transaction_type,
+                                            amount, transaction_date, chamber
+                               ORDER BY COALESCE(disclosure_date,
+                                                 DATE '1900-01-01') DESC,
+                                        report_url DESC
+                           ) AS rn,
+                           count(*) OVER (
+                               PARTITION BY senator, ticker, transaction_type,
+                                            amount, transaction_date, chamber
+                           ) AS n_rows
+                    FROM congress_trades
+                )
+                WHERE rn > 1 AND n_rows > 1
+            )
+            """
+        )
+        row = conn.execute(
+            "SELECT count(*) FROM congress_trades WHERE amended"
+        ).fetchone()
+        after = int(row[0]) if row else 0
+    newly = after - before
+    if newly:
+        log.info("congress: marked %d rows as amended (superseded)", newly)
+    return newly
+
+
 def store_trades(trades: list[CongressTrade], db_path: Path) -> int:
     """Upsert trades into congress_trades. Returns the count of new rows."""
     from cortex.storage.db import connect
 
     if not trades:
         return 0
+    flagged = sum(1 for t in trades if not ticker_ok(t.ticker))
+    if flagged:
+        log.warning(
+            "congress: %d/%d senate trades have invalid tickers (quarantined)",
+            flagged,
+            len(trades),
+        )
     with connect(db_path) as conn:
         row = conn.execute("SELECT COUNT(*) FROM congress_trades").fetchone()
         before = int(row[0]) if row else 0
@@ -477,8 +544,8 @@ def store_trades(trades: list[CongressTrade], db_path: Path) -> int:
             INSERT INTO congress_trades (
                 id, senator, ticker, transaction_type, amount,
                 transaction_date, disclosure_date, asset_description,
-                report_url, chamber
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'senate')
+                report_url, chamber, ticker_ok
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'senate', ?)
             ON CONFLICT (id) DO NOTHING
             """,
             [
@@ -492,12 +559,14 @@ def store_trades(trades: list[CongressTrade], db_path: Path) -> int:
                     t.disclosure_date,
                     t.asset_description,
                     t.report_url,
+                    ticker_ok(t.ticker),
                 )
                 for t in trades
             ],
         )
         row = conn.execute("SELECT COUNT(*) FROM congress_trades").fetchone()
         after = int(row[0]) if row else 0
+    mark_amended_duplicates(db_path)
     return after - before
 
 
@@ -513,13 +582,15 @@ def list_trades(
 
     clauses: list[str] = []
     params: list[object] = []
+    clauses.append("amended IS NOT TRUE")
+    clauses.append("ticker_ok IS NOT FALSE")
     if ticker is not None:
         clauses.append("ticker = ?")
         params.append(ticker.upper())
     if since is not None:
         clauses.append("COALESCE(disclosure_date, transaction_date) >= ?")
         params.append(since)
-    where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+    where = f"WHERE {' AND '.join(clauses)}"
     params.append(limit)
 
     with connect(db_path, read_only=True) as conn:
@@ -599,6 +670,8 @@ def congress_stats(db_path: Path, *, days: int = 365) -> dict[str, Any]:
                    transaction_date, disclosure_date
             FROM congress_trades
             WHERE COALESCE(disclosure_date, transaction_date) >= ?
+              AND amended IS NOT TRUE
+              AND ticker_ok IS NOT FALSE
             """,
             [since],
         ).fetchall()

@@ -99,6 +99,8 @@ def _load_congress_events(db_path: Path) -> list[_Event]:
             SELECT ticker, disclosure_date, transaction_date,
                    transaction_type, amount
             FROM congress_trades
+            WHERE amended IS NOT TRUE
+              AND ticker_ok IS NOT FALSE
             """
         ).fetchall()
     events: list[_Event] = []

@@ -177,3 +177,120 @@ def test_filter_trades_by_ticker_and_window():
     ]
     out = filter_trades(trades, ["NVDA"], since=dt.date(2026, 1, 1))
     assert [t.senator for t in out] == ["A"]  # AAPL filtered out, 2024 too old
+
+
+def _trade(**overrides: object) -> CongressTrade:
+    base: dict = dict(
+        senator="Jane Doe",
+        ticker="AAPL",
+        transaction_type="Purchase",
+        amount="$1,001 - $15,000",
+        transaction_date=dt.date(2024, 1, 5),
+        disclosure_date=dt.date(2024, 1, 20),
+        asset_description="Apple Inc",
+        report_url="https://efd/ptr/original",
+    )
+    base.update(overrides)
+    return CongressTrade(**base)  # type: ignore[arg-type]
+
+
+def _fresh_db(tmp_path):
+    from cortex.storage.db import connect
+    from cortex.storage.schemas import apply_schema
+
+    db = tmp_path / "congress.db"
+    with connect(db) as conn:
+        apply_schema(conn)
+    return db
+
+
+def test_ticker_ok_pattern():
+    from cortex.sources.congress import ticker_ok
+
+    assert ticker_ok("AAPL")
+    assert ticker_ok("BRK.B")
+    assert ticker_ok("BF/B")
+    assert not ticker_ok("-- AM")
+    assert not ticker_ok("AET CVS")
+    assert not ticker_ok("0QZI.IL")
+    assert not ticker_ok("")
+
+
+def test_store_trades_quarantines_invalid_tickers(tmp_path):
+    from cortex.sources.congress import store_trades
+    from cortex.storage.db import connect
+
+    db = _fresh_db(tmp_path)
+    store_trades(
+        [_trade(), _trade(ticker="-- AM", report_url="https://efd/ptr/other")], db
+    )
+    with connect(db, read_only=True) as conn:
+        rows = dict(
+            conn.execute("SELECT ticker, ticker_ok FROM congress_trades").fetchall()
+        )
+    assert rows["AAPL"] is True
+    assert rows["-- AM"] is False
+
+
+def test_amendment_marking_keeps_newest_unmarked(tmp_path):
+    from cortex.sources.congress import store_trades
+    from cortex.storage.db import connect
+
+    db = _fresh_db(tmp_path)
+    original = _trade()
+    amendment = _trade(
+        disclosure_date=dt.date(2024, 2, 10),
+        report_url="https://efd/ptr/original_amended",
+    )
+    store_trades([original, amendment], db)
+    with connect(db, read_only=True) as conn:
+        rows = dict(
+            conn.execute(
+                "SELECT report_url, amended FROM congress_trades"
+            ).fetchall()
+        )
+    assert rows["https://efd/ptr/original"] is True  # superseded
+    assert rows["https://efd/ptr/original_amended"] is False  # kept
+
+
+def test_amendment_marking_ignores_distinct_trades(tmp_path):
+    from cortex.sources.congress import store_trades
+    from cortex.storage.db import connect
+
+    db = _fresh_db(tmp_path)
+    store_trades(
+        [
+            _trade(),
+            _trade(
+                transaction_date=dt.date(2024, 1, 6),
+                report_url="https://efd/ptr/other-day",
+            ),
+        ],
+        db,
+    )
+    with connect(db, read_only=True) as conn:
+        row = conn.execute(
+            "SELECT count(*) FROM congress_trades WHERE amended"
+        ).fetchone()
+        marked = row[0] if row else None
+    assert marked == 0
+
+
+def test_list_trades_hides_amended_and_quarantined(tmp_path):
+    from cortex.sources.congress import list_trades, store_trades
+
+    db = _fresh_db(tmp_path)
+    store_trades(
+        [
+            _trade(),
+            _trade(
+                disclosure_date=dt.date(2024, 2, 10),
+                report_url="https://efd/ptr/original_amended",
+            ),
+            _trade(ticker="-- AM", report_url="https://efd/ptr/garbage"),
+        ],
+        db,
+    )
+    out = list_trades(db)
+    assert len(out) == 1
+    assert out[0].report_url == "https://efd/ptr/original_amended"

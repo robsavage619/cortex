@@ -32,9 +32,11 @@ def test_exit_survives_trim_upsert(tmp_path):
     assert store_fund_moves([_move("TRIM", 50_000_000)], db) == 0
 
     with connect(db, read_only=True) as conn:
-        action, shares = conn.execute(
+        row = conn.execute(
             "SELECT action, shares FROM fund_holdings"
         ).fetchone()
+        assert row is not None
+        action, shares = row
     assert action == "EXIT"
     assert shares == 0
 
@@ -48,9 +50,11 @@ def test_non_exit_rows_still_update(tmp_path):
     store_fund_moves([_move("TRIM", 50_000_000)], db)
 
     with connect(db, read_only=True) as conn:
-        action, shares = conn.execute(
+        row = conn.execute(
             "SELECT action, shares FROM fund_holdings"
         ).fetchone()
+        assert row is not None
+        action, shares = row
     assert action == "TRIM"
     assert shares == 50_000_000
 
@@ -64,5 +68,6 @@ def test_exit_replacing_exit_updates_in_place(tmp_path):
     store_fund_moves([_move("EXIT", 0)], db)
 
     with connect(db, read_only=True) as conn:
-        count = conn.execute("SELECT count(*) FROM fund_holdings").fetchone()[0]
+        row = conn.execute("SELECT count(*) FROM fund_holdings").fetchone()
+        count = row[0] if row else None
     assert count == 1

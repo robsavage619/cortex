@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import duckdb
 
-SCHEMA_VERSION = 15
+SCHEMA_VERSION = 16
 
 DDL_STATEMENTS = (
     """
@@ -243,6 +243,11 @@ MIGRATION_STATEMENTS = (
     "ALTER TABLE executive_mentions ADD COLUMN IF NOT EXISTS abn_1d DOUBLE",
     "ALTER TABLE executive_mentions ADD COLUMN IF NOT EXISTS abn_5d DOUBLE",
     "ALTER TABLE executive_mentions ADD COLUMN IF NOT EXISTS abn_20d DOUBLE",
+    # v16 — congress integrity: amendment marking + ticker quarantine;
+    # executive tri-state (NULL meaningful + NULL analyzed_at = never analyzed).
+    "ALTER TABLE congress_trades ADD COLUMN IF NOT EXISTS amended BOOLEAN DEFAULT FALSE",  # noqa: E501
+    "ALTER TABLE congress_trades ADD COLUMN IF NOT EXISTS ticker_ok BOOLEAN",
+    "ALTER TABLE executive_mentions ADD COLUMN IF NOT EXISTS analyzed_at TIMESTAMP",
 )
 
 

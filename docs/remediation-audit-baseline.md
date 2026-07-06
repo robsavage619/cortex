@@ -59,3 +59,24 @@ touched data. Re-run and appended after each data-touching phase.
   `analyzed_at` to disambiguate.
 - No fabricated candidate ranks at this snapshot (no force-included tickers
   in the current candidates table).
+
+## Phase 1 re-sync delta (2026-07-06)
+
+Dedupe keys fixed (insider: + shares + accession; activist: + filer; funds:
+EXIT preserved as terminal), affected tables wiped and re-ingested from SEC:
+
+| table | before | after | delta | read |
+|---|---|---|---|---|
+| insider_buys | 8,591 | 13,008 | **+4,417 (+51%)** | the old key silently collapsed 34% of all Form 4 P-buys (same-filer same-day lots) |
+| activist_stakes | 1,626 | 1,546 | −80 | not a clean damage measure: old rows accumulated across years of S&P-500 universe drift; the new count is one consistent fetch (2014→now, today's universe) with the finer key |
+
+## Phase 2 backfill (2026-07-06, schema v15 → 16)
+
+- `ticker_ok` backfill: **180 rows quarantined** (matches baseline
+  pattern-fail count exactly).
+- `mark_amended_duplicates` backfill: **1,978 rows marked `amended`**
+  (matches baseline excess-rows count exactly).
+- Post-backfill audit: `excess_rows_unmarked: 0` — every natural-key
+  duplicate group now has exactly one live row (newest disclosure kept).
+- Serving paths (`list_trades`, `congress_stats`, member profile) and the
+  backtest congress loader now exclude amended + quarantined rows.

@@ -855,6 +855,8 @@ def get_congress_member(name: str, days: int = 730) -> dict[str, Any]:
             FROM congress_trades
             WHERE (senator = ? OR senator = ? OR senator ILIKE ?)
               AND COALESCE(disclosure_date, transaction_date) >= ?
+              AND amended IS NOT TRUE
+              AND ticker_ok IS NOT FALSE
             ORDER BY COALESCE(disclosure_date, transaction_date) DESC NULLS LAST
             """,
             [canonical, name, f"%{last_name}%", since],

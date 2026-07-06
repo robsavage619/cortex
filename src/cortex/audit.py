@@ -52,12 +52,37 @@ def _congress_amendment_duplicates(conn: Any) -> dict[str, Any]:
     ).fetchall()
     total = conn.execute("SELECT count(*) FROM congress_trades").fetchone()[0]
     by_chamber = {r[0]: {"dup_groups": r[1], "excess_rows": r[2]} for r in rows}
-    return {
+    out = {
         "total_rows": total,
         "by_chamber": by_chamber,
         "dup_groups": sum(v["dup_groups"] for v in by_chamber.values()),
         "excess_rows": sum(v["excess_rows"] for v in by_chamber.values()),
     }
+    # Post-v16: how many duplicate-group rows remain UNMARKED (should be ~0
+    # after mark_amended_duplicates has run). Pre-v16 DBs lack the column.
+    try:
+        unmarked = conn.execute(
+            """
+            SELECT COALESCE(sum(n_unmarked - 1), 0)
+            FROM (
+                SELECT count(*) FILTER (amended IS NOT TRUE) AS n_unmarked
+                FROM congress_trades
+                GROUP BY senator, ticker, transaction_type, amount,
+                         transaction_date, chamber
+                HAVING count(*) > 1
+            )
+            WHERE n_unmarked > 1
+            """
+        ).fetchone()[0]
+        marked = conn.execute(
+            "SELECT count(*) FROM congress_trades WHERE amended"
+        ).fetchone()[0]
+        out["rows_marked_amended"] = marked
+        out["excess_rows_unmarked"] = unmarked
+    except Exception:  # noqa: BLE001 - pre-migration DB
+        out["rows_marked_amended"] = None
+        out["excess_rows_unmarked"] = None
+    return out
 
 
 def _suspicious_tickers(conn: Any) -> dict[str, Any]:

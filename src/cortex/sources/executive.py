@@ -17,7 +17,7 @@ import logging
 import os
 import re
 from dataclasses import dataclass, replace
-from datetime import date
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -36,12 +36,15 @@ class ExecutiveMention:
     quote: str | None = None
     stance: str = "positive"
     # Enrichment (filled by the Haiku analysis + price-reaction gate on sync).
+    # Tri-state: meaningful NULL + analyzed_at NULL = never analyzed;
+    # meaningful NULL + analyzed_at set = analysis ran but was inconclusive.
     meaningful: bool | None = None
     significance: str | None = None
     analysis: str | None = None
     abn_1d: float | None = None
     abn_5d: float | None = None
     abn_20d: float | None = None
+    analyzed_at: datetime | None = None
 
     @property
     def dedupe_id(self) -> str:
@@ -68,14 +71,20 @@ def store_mentions(mentions: list[ExecutiveMention], db_path: Path) -> int:
             INSERT INTO executive_mentions
               (id, ticker, speaker, mention_date, source_type, source_url,
                quote, stance, meaningful, significance, analysis,
-               abn_1d, abn_5d, abn_20d)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+               abn_1d, abn_5d, abn_20d, analyzed_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT (id) DO UPDATE SET
               quote = excluded.quote, stance = excluded.stance,
               source_type = excluded.source_type,
-              meaningful = excluded.meaningful,
-              significance = excluded.significance,
-              analysis = excluded.analysis,
+              -- COALESCE: an LLM-off re-sync must not wipe a prior verdict.
+              meaningful = COALESCE(excluded.meaningful,
+                                    executive_mentions.meaningful),
+              significance = COALESCE(excluded.significance,
+                                      executive_mentions.significance),
+              analysis = COALESCE(excluded.analysis,
+                                  executive_mentions.analysis),
+              analyzed_at = COALESCE(excluded.analyzed_at,
+                                     executive_mentions.analyzed_at),
               abn_1d = excluded.abn_1d, abn_5d = excluded.abn_5d,
               abn_20d = excluded.abn_20d
             """,
@@ -95,6 +104,7 @@ def store_mentions(mentions: list[ExecutiveMention], db_path: Path) -> int:
                     m.abn_1d,
                     m.abn_5d,
                     m.abn_20d,
+                    m.analyzed_at,
                 )
                 for m in mentions
             ],
@@ -376,16 +386,27 @@ def analyze_mention(
 
 
 def _enrich(mention: ExecutiveMention, company: str) -> ExecutiveMention:
-    """Attach the price reaction and the Haiku significance verdict."""
+    """Attach the price reaction and the Haiku significance verdict.
+
+    ``analyzed_at`` is stamped only when the LLM pass actually runs, so a
+    NULL ``meaningful`` stays distinguishable from "analysis never ran"
+    (local syncs with LLM calls gated off).
+    """
+    from cortex.config import llm_calls_enabled
+
     reaction = price_reaction(mention.ticker, mention.mention_date)
     meaningful, significance, reason = analyze_mention(
         company, mention.ticker, mention.quote or ""
+    )
+    analyzed_at = (
+        datetime.now(tz=UTC).replace(tzinfo=None) if llm_calls_enabled() else None
     )
     return replace(
         mention,
         meaningful=meaningful,
         significance=significance,
         analysis=reason,
+        analyzed_at=analyzed_at,
         abn_1d=reaction.get("abn_1d") if reaction.get("available") else None,
         abn_5d=reaction.get("abn_5d") if reaction.get("available") else None,
         abn_20d=reaction.get("abn_20d") if reaction.get("available") else None,

@@ -618,10 +618,18 @@ def existing_house_report_urls(db_path: Path) -> set[str]:
 
 def store_house_trades(trades: list[HouseTrade], db_path: Path) -> int:
     """Upsert House trades into congress_trades. Returns count of new rows."""
+    from cortex.sources.congress import mark_amended_duplicates, ticker_ok
     from cortex.storage.db import connect
 
     if not trades:
         return 0
+    flagged = sum(1 for t in trades if not ticker_ok(t.ticker))
+    if flagged:
+        log.warning(
+            "House: %d/%d trades have invalid tickers (quarantined)",
+            flagged,
+            len(trades),
+        )
     with connect(db_path) as conn:
         row = conn.execute("SELECT COUNT(*) FROM congress_trades").fetchone()
         before = int(row[0]) if row else 0
@@ -630,8 +638,8 @@ def store_house_trades(trades: list[HouseTrade], db_path: Path) -> int:
             INSERT INTO congress_trades (
                 id, senator, ticker, transaction_type, amount,
                 transaction_date, disclosure_date, asset_description,
-                report_url, chamber
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'house')
+                report_url, chamber, ticker_ok
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'house', ?)
             ON CONFLICT (id) DO NOTHING
             """,
             [
@@ -645,10 +653,12 @@ def store_house_trades(trades: list[HouseTrade], db_path: Path) -> int:
                     t.disclosure_date,
                     t.asset_description,
                     t.report_url,
+                    ticker_ok(t.ticker),
                 )
                 for t in trades
             ],
         )
         row = conn.execute("SELECT COUNT(*) FROM congress_trades").fetchone()
         after = int(row[0]) if row else 0
+    mark_amended_duplicates(db_path)
     return after - before
