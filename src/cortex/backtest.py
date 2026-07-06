@@ -2,21 +2,21 @@
 
 Designed to a strict methodology (no look-ahead, zero tunable parameters):
 
-- BACKTEST factor set = price + flow factors ONLY. Value/quality are excluded
-  because we have no point-in-time fundamentals — including them would be
-  look-ahead. They appear in the LIVE ranking only.
-- Factors: momentum 12-1, trend (continuous distance to 200d SMA), low-vol,
-  congressional net-buy flow, 13F institutional net-buy flow.
-- Equal-weight z-composite in two equal blocks (price 50% / flow 50%) so the
-  collinear price trio doesn't drown the flow thesis.
+- Composite = three equal blocks, each the nanmean of its factors
+  (see ``_build_signals``): price (momentum 12-1, trend = continuous
+  distance to 200d SMA), fundamental (earnings yield, ROE — point-in-time
+  EDGAR filings gated on filing_date), flow (congressional net-buy,
+  13F institutional net-buy).
+- Low-vol is pre-registered OUT of the price block (2026-05-23); insider
+  Form 4 is pre-registered OUT of the flow block (2026-05-28, NW t=-0.43).
+  Both are still computed for the per-factor ablation.
 - Monthly rebalance, long-only top decile, equal-weighted, vs an equal-weight
-  S&P-500 benchmark, net of transaction costs.
-- A PRICE-ONLY composite is run as the null model: the flow factors only earn
-  credit if they beat price-only.
+  S&P-500 benchmark, net of transaction costs (10 bps/side).
+- PRICE-ONLY and PRICE+FUND composites run as null models: flow factors only
+  earn credit if the full composite beats them.
 
 KNOWN BIASES (disclosed, not hidden):
 - Universe = *current* S&P 500 members → survivorship bias inflates everything.
-- Value/quality contribution is unmeasured (no point-in-time fundamentals).
 - Flow factors are sparse and momentum-correlated; treat as a tilt.
 """
 
@@ -361,6 +361,8 @@ class BacktestReport:
     factor_ics: list[FactorIC] = field(default_factory=list)
     long_short: LongShortResult | None = None
     factor_corr: FactorCorrelation | None = None
+    n_tickers_requested: int = 0
+    n_tickers_priced: int = 0
 
 
 def _annualize(monthly: list[float]) -> tuple[float, float, float]:
@@ -520,6 +522,22 @@ def run_backtest(
     )
     closes: Any = raw["Close"] if len(tickers) > 1 else raw[["Close"]]
     closes = closes.dropna(how="all")
+    # yfinance silently omits tickers it fails to price — make the gap visible.
+    closes = closes.dropna(axis=1, how="all")
+    n_requested = len(tickers)
+    n_priced = int(closes.shape[1])
+    coverage = n_priced / n_requested if n_requested else 0.0
+    missing = sorted(set(tickers) - set(closes.columns))
+    if coverage < 0.95:
+        log.warning(
+            "Price coverage %d/%d (%.1f%%) — missing: %s",
+            n_priced,
+            n_requested,
+            100 * coverage,
+            missing[:20],
+        )
+    else:
+        log.info("Price coverage %d/%d (%.1f%%)", n_priced, n_requested, 100 * coverage)
     cols = list(closes.columns)
     col_idx = {t: i for i, t in enumerate(cols)}
     price_arr = closes.to_numpy()  # [days, names]
@@ -763,6 +781,8 @@ def run_backtest(
         factor_ics=factor_ics,
         long_short=long_short,
         factor_corr=factor_corr,
+        n_tickers_requested=n_requested,
+        n_tickers_priced=n_priced,
     )
 
 
