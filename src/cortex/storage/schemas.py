@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import duckdb
 
-SCHEMA_VERSION = 16
+SCHEMA_VERSION = 17
 
 DDL_STATEMENTS = (
     """
@@ -248,6 +248,12 @@ MIGRATION_STATEMENTS = (
     "ALTER TABLE congress_trades ADD COLUMN IF NOT EXISTS amended BOOLEAN DEFAULT FALSE",  # noqa: E501
     "ALTER TABLE congress_trades ADD COLUMN IF NOT EXISTS ticker_ok BOOLEAN",
     "ALTER TABLE executive_mentions ADD COLUMN IF NOT EXISTS analyzed_at TIMESTAMP",
+    # v17 — brain alignment: discovery computes the backtested composite;
+    # candidates carry the canonical factor z-scores + honest forced flag.
+    "ALTER TABLE candidates ADD COLUMN IF NOT EXISTS forced BOOLEAN DEFAULT FALSE",
+    "ALTER TABLE candidates ADD COLUMN IF NOT EXISTS z_trend DOUBLE",
+    "ALTER TABLE candidates ADD COLUMN IF NOT EXISTS z_congress DOUBLE",
+    "ALTER TABLE candidates ADD COLUMN IF NOT EXISTS z_fund_flow DOUBLE",
 )
 
 

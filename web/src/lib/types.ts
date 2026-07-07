@@ -212,6 +212,20 @@ export interface Candidate {
   z_quality: number | null
   composite_score: number
   composite_rank: number
+  z_trend: number | null
+  z_congress: number | null
+  z_fund_flow: number | null
+  forced: boolean
+}
+
+export interface GateFactor {
+  t_nw: number | null
+  clears: boolean
+}
+
+export interface GateReadout {
+  threshold: number
+  factors: Record<string, GateFactor>
 }
 
 export interface CandidatesResponse {
@@ -219,6 +233,7 @@ export interface CandidatesResponse {
   candidates: Candidate[]
   last_run: string | null
   count: number
+  gate: GateReadout
 }
 
 export interface VolStock {

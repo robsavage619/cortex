@@ -33,23 +33,39 @@ from typing import Any
 
 import numpy as np
 
+from cortex.composite import (
+    ACTIVISM_HALFLIFE as _ACTIVISM_HALFLIFE,
+)
+from cortex.composite import (
+    ACTIVISM_WINDOW as _ACTIVISM_WINDOW,
+)
+from cortex.composite import (
+    CONGRESS_HALFLIFE as _CONGRESS_HALFLIFE,
+)
+from cortex.composite import (
+    CONGRESS_WINDOW as _CONGRESS_WINDOW,
+)
+from cortex.composite import (
+    FUND_HALFLIFE as _FUND_HALFLIFE,
+)
+from cortex.composite import (
+    FUND_WINDOW as _FUND_WINDOW,
+)
+from cortex.composite import (
+    INSIDER_HALFLIFE as _INSIDER_HALFLIFE,
+)
+from cortex.composite import (
+    INSIDER_WINDOW as _INSIDER_WINDOW,
+)
+from cortex.composite import (
+    Z_CLIP as _Z_CLIP,
+)
+from cortex.composite import (
+    build_blocks,
+)
+
 log = logging.getLogger(__name__)
 
-# Half-lives (days) chosen a priori from the literature — NOT fitted.
-_CONGRESS_HALFLIFE = 180.0
-_FUND_HALFLIFE = 270.0
-# Insider (Form 4) signal decays faster — information advantage is short-lived
-# post-disclosure. Cohen et al. (2012) show drift over ~6 months. 90-day
-# halflife with 180-day window chosen a priori.
-_INSIDER_HALFLIFE = 90.0
-_INSIDER_WINDOW = 180
-# Activism (SC 13D) drifts slowly: Brav & Jiang (2008) document 10-30% drift
-# over 12-18 months in large caps. 365-day halflife / 730-day window a priori.
-_ACTIVISM_HALFLIFE = 365.0
-_ACTIVISM_WINDOW = 730
-_CONGRESS_WINDOW = 365  # trailing days of filings to consider
-_FUND_WINDOW = 540
-_Z_CLIP = 3.0
 _COST_PER_SIDE = 0.0010  # 10 bps
 _TRADING_DAYS = 252
 
@@ -472,36 +488,16 @@ def _build_signals(
     zfund: np.ndarray,
     zinside: np.ndarray,
 ) -> dict[str, np.ndarray]:
-    """Build composite variants from three equal blocks.
+    """Build composite variants — thin wrapper over ``composite.build_blocks``.
 
-    Blocks: price (mom/trend), fundamental (value/quality), flow
-    (congress/13F). Each block = nanmean of available factors;
-    composite = nanmean of available block means (no z-imputation).
-
-    Low-vol excluded from price block: the low-volatility anomaly
-    underperforms in sustained bull-market regimes (Ang et al. 2006,
-    Baker et al. 2011). Pre-registered removal 2026-05-23.
-
-    Insider (Form 4 P-code) excluded from the flow block: pre-registered as
-    "drop if t-stat < 1.0 after first sync." First full sync (2026-05-28,
-    8.6k buys, 23% coverage) measured monthly IC NW t = -0.43 — insider buys
-    are contrarian (corr -0.33 with momentum) and carry no monthly-horizon
-    signal in large-cap names. Still computed and shown in the ablation; not
-    in the composite. ``zinside`` is intentionally unused here.
+    The definition, block structure and pre-registration history live in
+    :mod:`cortex.composite` — the single source of truth shared with live
+    discovery. ``zvol`` and ``zinside`` are accepted for the ablation but
+    pre-registered OUT of every composite (low-vol 2026-05-23; insider
+    2026-05-28, NW t = -0.43).
     """
-    _ = zinside  # retained for the ablation; pre-registered out of the composite
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", category=RuntimeWarning)
-        price = np.nanmean(np.vstack([zmom, ztrend]), axis=0)
-        fund = np.nanmean(np.vstack([zval, zqual]), axis=0)
-        flow = np.nanmean(np.vstack([zcong, zfund]), axis=0)
-        cortex = np.nanmean(np.vstack([price, fund, flow]), axis=0)
-        price_fund = np.nanmean(np.vstack([price, fund]), axis=0)
-    return {
-        "cortex": cortex,  # price + fundamental + flow (full)
-        "price": price,  # null model (mom + trend, no low-vol)
-        "price_fund": price_fund,  # price + fundamental (no flow)
-    }
+    _ = zvol, zinside  # ablation-only; pre-registered out of the composite
+    return build_blocks(zmom, ztrend, zval, zqual, zcong, zfund)
 
 
 def run_backtest(

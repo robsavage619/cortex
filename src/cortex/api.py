@@ -425,7 +425,39 @@ def _candidate_out(c: discovery.Candidate) -> dict[str, Any]:
         "z_quality": c.z_quality,
         "composite_score": c.composite_score,
         "composite_rank": c.composite_rank,
+        "z_trend": c.z_trend,
+        "z_congress": c.z_congress,
+        "z_fund_flow": c.z_fund_flow,
+        "forced": c.forced,
     }
+
+
+def _gate_readout() -> dict[str, Any]:
+    """Pre-registration gate status from the latest factor_history snapshot.
+
+    Display honesty, not a trading system: which factors clear NW t ≥ 3.0.
+    """
+    threshold = 3.0
+    factors: dict[str, Any] = {}
+    try:
+        with connect(_db(), read_only=True) as conn:
+            rows = conn.execute(
+                """
+                SELECT factor, ic_tstat_nw
+                FROM factor_history
+                WHERE snapshot_date = (
+                    SELECT MAX(snapshot_date) FROM factor_history
+                )
+                """
+            ).fetchall()
+        for factor, t_nw in rows:
+            factors[factor] = {
+                "t_nw": t_nw,
+                "clears": bool(t_nw is not None and abs(t_nw) >= threshold),
+            }
+    except Exception:  # noqa: BLE001 - table may be empty on a fresh DB
+        pass
+    return {"threshold": threshold, "factors": factors}
 
 
 def _volstock_out(s: Any) -> dict[str, Any]:
@@ -1075,6 +1107,7 @@ def get_candidates() -> dict[str, Any]:
         "candidates": [_candidate_out(c) for c in candidates],
         "last_run": candidates[0].discovered_at.isoformat() if candidates else None,
         "count": len(candidates),
+        "gate": _gate_readout(),
     }
 
 

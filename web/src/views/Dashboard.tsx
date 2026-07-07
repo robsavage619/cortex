@@ -390,6 +390,14 @@ function CandidateCard({ candidate, onClick }: { candidate: Candidate; onClick: 
     >
       {/* rank + score */}
       <div className="absolute right-3 top-3 flex items-center gap-1">
+        {candidate.forced && (
+          <span
+            className="inline-flex items-center rounded-sm border border-warn/25 bg-warn/10 px-1 py-0.5 text-[8px] font-bold uppercase text-warn"
+            title="Shown because it's tied to an open thesis — its true rank is outside the top 30."
+          >
+            thesis
+          </span>
+        )}
         <span className="num text-[9px] text-faint">#{candidate.composite_rank}</span>
         <span
           className={cn('inline-flex items-center rounded-sm border px-1.5 py-0.5 text-[10px] font-bold', plain ? 'font-sans' : 'num tabular-nums', scoreColor)}

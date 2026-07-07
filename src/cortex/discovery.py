@@ -24,19 +24,28 @@ class Candidate:
     earnings_yield: float | None
     roe: float | None
     z_momentum: float | None
-    z_low_vol: float | None
-    z_sharpe: float | None
+    z_low_vol: float | None  # display-only: pre-registered OUT of the composite
+    z_sharpe: float | None  # display-only: never in any tested composite
     z_value: float | None
     z_quality: float | None
     composite_score: float
     composite_rank: int
+    z_trend: float | None = None
+    z_congress: float | None = None
+    z_fund_flow: float | None = None
+    # True when persisted only because it was force-included (open thesis)
+    # despite ranking outside top_n — the rank is still its true position.
+    forced: bool = False
 
 
 # ── Math helpers ──────────────────────────────────────────────────────────────
 
 
 def _zscore_series(values: dict[str, float | None]) -> dict[str, float | None]:
-    """Cross-sectional z-score.  Returns None for tickers that had None input."""
+    """Cross-sectional z-score, winsorized at ±Z_CLIP for parity with the
+    backtest's ``_zscore``. Returns None for tickers that had None input."""
+    from cortex.composite import Z_CLIP
+
     valid = {k: v for k, v in values.items() if v is not None}
     if len(valid) < 2:
         return {k: None for k in values}
@@ -49,7 +58,7 @@ def _zscore_series(values: dict[str, float | None]) -> dict[str, float | None]:
     out: dict[str, float | None] = {}
     for k in values:
         if k in valid:
-            out[k] = (valid[k] - mean) / std
+            out[k] = max(-Z_CLIP, min(Z_CLIP, (valid[k] - mean) / std))
         else:
             out[k] = None
     return out
@@ -113,6 +122,8 @@ def _price_factors_batch(tickers: list[str]) -> dict[str, dict[str, Any]]:
                 "vol_252d": None,
                 "sharpe_12m": None,
                 "above_200d_sma": None,
+                "trend_200d": None,
+                "last_close": None,
             }
             continue
 
@@ -123,6 +134,8 @@ def _price_factors_batch(tickers: list[str]) -> dict[str, dict[str, Any]]:
                 "vol_252d": None,
                 "sharpe_12m": None,
                 "above_200d_sma": None,
+                "trend_200d": None,
+                "last_close": None,
             }
             continue
 
@@ -161,18 +174,23 @@ def _price_factors_batch(tickers: list[str]) -> dict[str, dict[str, Any]]:
             else None
         )
 
-        # Trend regime: above 200-day SMA?
+        # Trend: continuous distance to the 200-day SMA (the backtest's
+        # trend factor); the boolean gate derives from its sign.
         if len(series) >= 200:
             sma_200 = float(series.iloc[-200:].mean())
             above_200d_sma = price_now > sma_200
+            trend_200d = price_now / sma_200 - 1.0 if sma_200 > 0 else None
         else:
             above_200d_sma = None
+            trend_200d = None
 
         results[ticker] = {
             "momentum_12_1": momentum_12_1,
             "vol_252d": vol_252d,
             "sharpe_12m": sharpe_12m,
             "above_200d_sma": above_200d_sma,
+            "trend_200d": trend_200d,
+            "last_close": price_now,
         }
 
     return results
@@ -181,28 +199,86 @@ def _price_factors_batch(tickers: list[str]) -> dict[str, dict[str, Any]]:
 # ── Fundamental factor fetch ──────────────────────────────────────────────────
 
 
-def _fetch_fundamentals(tickers: list[str]) -> dict[str, dict[str, Any]]:
-    """Fetch earnings yield and ROE for the given ticker list via yf.Ticker.info."""
-    import yfinance as yf
+def _pit_fundamentals(
+    db_path: Path,
+    tickers: list[str],
+    price_data: dict[str, dict[str, Any]],
+    as_of: date,
+) -> dict[str, dict[str, Any]]:
+    """Point-in-time earnings yield and ROE from the ``fundamentals`` table.
 
-    log.info("Fetching fundamentals for %d tickers…", len(tickers))
+    Same source and gating the backtest uses (latest filing with
+    filing_date ≤ as_of) — replaces the old yf.Ticker.info shortcut, which
+    served numbers the backtest never validated.
+    """
+    from cortex.backtest import _fundamental_asof, _load_fundamentals
+
+    fmap = _fundamental_asof(_load_fundamentals(db_path), as_of)
     out: dict[str, dict[str, Any]] = {}
-    for i, ticker in enumerate(tickers):
-        if i % 25 == 0:
-            log.info("  fundamentals %d/%d", i, len(tickers))
-        try:
-            info = yf.Ticker(ticker).info
-            pe = info.get("trailingPE")
-            roe = info.get("returnOnEquity")
-            earnings_yield = (1.0 / pe) if pe and pe > 0 else None
-            out[ticker] = {
-                "earnings_yield": earnings_yield,
-                "roe": float(roe) if roe is not None else None,
-            }
-        except Exception as exc:
-            log.debug("fundamentals failed for %s: %s", ticker, exc)
-            out[ticker] = {"earnings_yield": None, "roe": None}
+    covered = 0
+    for ticker in tickers:
+        fp = fmap.get(ticker)
+        last_close = price_data.get(ticker, {}).get("last_close")
+        earnings_yield = None
+        roe = None
+        if fp is not None:
+            if fp.eps_diluted is not None and last_close and last_close > 0:
+                earnings_yield = fp.eps_diluted / last_close
+            roe = fp.roe
+        if earnings_yield is not None or roe is not None:
+            covered += 1
+        out[ticker] = {"earnings_yield": earnings_yield, "roe": roe}
+    log.info(
+        "Fundamentals (point-in-time, filing_date ≤ %s): %d/%d tickers covered",
+        as_of,
+        covered,
+        len(tickers),
+    )
+    if covered == 0:
+        log.warning(
+            "Fundamentals table empty or stale — fund block will be missing "
+            "from every composite (run `cortex fundamentals-sync`)"
+        )
     return out
+
+
+def _flow_scores(
+    db_path: Path, tickers: list[str], as_of: date
+) -> tuple[dict[str, float | None], dict[str, float | None]]:
+    """Congress + 13F decayed net-flow scores, disclosure-gated at as_of.
+
+    Reuses the backtest's event loaders and decay math with the canonical
+    half-life constants. Tickers with no events in the window get None
+    (sparse coverage — z-scored over event-having names only, matching the
+    backtest's NaN semantics).
+    """
+    from cortex.backtest import (
+        _flow_score,
+        _load_congress_events,
+        _load_fund_events,
+    )
+    from cortex.composite import (
+        CONGRESS_HALFLIFE,
+        CONGRESS_WINDOW,
+        FUND_HALFLIFE,
+        FUND_WINDOW,
+    )
+
+    cong_map = _flow_score(
+        _load_congress_events(db_path), as_of, CONGRESS_HALFLIFE, CONGRESS_WINDOW
+    )
+    fund_map = _flow_score(
+        _load_fund_events(db_path), as_of, FUND_HALFLIFE, FUND_WINDOW
+    )
+    cong = {t: cong_map.get(t) for t in tickers}
+    fund = {t: fund_map.get(t) for t in tickers}
+    log.info(
+        "Flow coverage: congress %d, 13F %d of %d tickers",
+        sum(1 for v in cong.values() if v is not None),
+        sum(1 for v in fund.values() if v is not None),
+        len(tickers),
+    )
+    return cong, fund
 
 
 # ── Storage ───────────────────────────────────────────────────────────────────
@@ -223,8 +299,9 @@ def _store_candidates(candidates: list[Candidate], db_path: Path) -> None:
                 momentum_12_1, vol_252d, sharpe_12m, above_200d_sma,
                 earnings_yield, roe,
                 z_momentum, z_low_vol, z_sharpe, z_value, z_quality,
-                composite_score, composite_rank
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                composite_score, composite_rank,
+                z_trend, z_congress, z_fund_flow, forced
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [
                 (
@@ -244,6 +321,10 @@ def _store_candidates(candidates: list[Candidate], db_path: Path) -> None:
                     c.z_quality,
                     c.composite_score,
                     c.composite_rank,
+                    c.z_trend,
+                    c.z_congress,
+                    c.z_fund_flow,
+                    c.forced,
                 )
                 for c in candidates
             ],
@@ -262,7 +343,8 @@ def list_candidates(db_path: Path) -> list[Candidate]:
                 momentum_12_1, vol_252d, sharpe_12m, above_200d_sma,
                 earnings_yield, roe,
                 z_momentum, z_low_vol, z_sharpe, z_value, z_quality,
-                composite_score, composite_rank
+                composite_score, composite_rank,
+                z_trend, z_congress, z_fund_flow, forced
             FROM candidates
             ORDER BY composite_rank
             """
@@ -286,6 +368,10 @@ def list_candidates(db_path: Path) -> list[Candidate]:
             z_quality=r[13],
             composite_score=r[14],
             composite_rank=r[15],
+            z_trend=r[16],
+            z_congress=r[17],
+            z_fund_flow=r[18],
+            forced=bool(r[19]),
         )
         for r in rows
     ]
@@ -297,28 +383,38 @@ def list_candidates(db_path: Path) -> list[Candidate]:
 def run_discovery(
     db_path: Path,
     top_n: int = 30,
-    prefilter_n: int = 150,
+    prefilter_n: int | None = None,
     force_include: list[str] | None = None,
 ) -> list[Candidate]:
-    """Run the 6-factor CORTEX discovery pipeline.
+    """Run CORTEX discovery — the live computation of the BACKTESTED composite.
+
+    The composite definition lives in :mod:`cortex.composite` (three equal
+    blocks: price = momentum/trend, fundamental = value/quality, flow =
+    congress/13F). Low-vol and Sharpe are computed for display only — both
+    are pre-registered OUT of the composite.
 
     Args:
+        top_n: How many top-ranked candidates to persist.
+        prefilter_n: Ignored — retained for call-site compatibility. The old
+            150-ticker prefilter (and its shortlist z-score recompute) made
+            live scores incomparable to the backtest and was removed.
         force_include: Tickers to always score and persist regardless of rank
             (e.g. active thesis tickers). They are scored truthfully — the
-            composite and rank reflect their true cross-sectional position.
+            composite and rank reflect their true cross-sectional position —
+            and rows outside top_n carry ``forced = True``.
 
     Pipeline:
-        1. Load S&P 500 universe (~500 tickers)
-        2. Bulk-download 13 months of price data (fast, yf.download)
-        3. Compute price-based factors: momentum 12-1, vol 252d, Sharpe 12m,
-           trend regime (200d SMA gate)
-        4. Cross-sectional z-score price factors; compute price composite
-        5. Pre-filter to top `prefilter_n` by price composite (force_include
-           tickers are always added to the shortlist)
-        6. Fetch fundamentals (earnings yield, ROE) for the shortlist only
-        7. Compute full 6-factor composite; rank; keep top `top_n`
-        8. Persist results to DB (DELETE + re-INSERT)
+        1. Load S&P 500 universe (~500 tickers); bulk-download 13mo of prices
+        2. Hard trend gate: drop stocks below the 200d SMA (Faber regime
+           filter — the one documented, conservative-only divergence from
+           the backtest, which scores below-trend names too)
+        3. Point-in-time fundamentals from the ``fundamentals`` table and
+           decayed congress/13F flow scores — the backtest's own loaders
+        4. ONE cross-sectional z-pass over the full gated universe
+           (winsorized ±3), canonical composite, rank ALL scored tickers
+        5. Persist top_n plus force-included rows (DELETE + re-INSERT)
     """
+    _ = prefilter_n  # removed: shortlist z-recompute broke backtest parity
     from cortex.sources.universe import sp500_tickers
 
     as_of = date.today()
@@ -330,79 +426,67 @@ def run_discovery(
     # ── Stage 1: price factors ────────────────────────────────────────────────
     price_data = _compute_price_factors(tickers)
 
-    # ── Stage 2: trend gate + price composite pre-filter ─────────────────────
-    # Exclude stocks below 200d SMA (Faber regime filter — hard gate)
+    # ── Stage 2: hard trend gate ──────────────────────────────────────────────
+    # Below-200d-SMA stocks are excluded from the live list (conservatism);
+    # force-included thesis tickers are scored and persisted regardless.
     trend_ok = [
         t for t in tickers if price_data.get(t, {}).get("above_200d_sma") is not False
     ]
-    log.info("After trend gate: %d tickers remain", len(trend_ok))
-
-    # Price composite: z-score momentum, neg-z vol, z Sharpe → equal-weight avg
-    mom_raw = {t: price_data[t]["momentum_12_1"] for t in trend_ok}
-    vol_raw = {t: price_data[t]["vol_252d"] for t in trend_ok}
-    shr_raw = {t: price_data[t]["sharpe_12m"] for t in trend_ok}
-
-    z_mom = _zscore_series(mom_raw)
-    # Low-vol: negate so lower vol → higher z-score
-    z_vol_inv = _zscore_series(
-        {t: (-v if v is not None else None) for t, v in vol_raw.items()}
+    scored = list(trend_ok)
+    for t in force_include or []:
+        if t in price_data and t not in scored:
+            scored.append(t)
+            log.info("Force-including %s (below trend gate or outside universe)", t)
+    log.info(
+        "Scored cross-section: %d tickers (%d passed trend gate, %d forced in)",
+        len(scored),
+        len(trend_ok),
+        len(scored) - len(trend_ok),
     )
-    z_shr = _zscore_series(shr_raw)
 
-    def _price_composite(t: str) -> float:
-        scores = [z_mom[t], z_vol_inv[t], z_shr[t]]
-        valid = [s for s in scores if s is not None]
-        return sum(valid) / len(valid) if valid else -999.0
+    # ── Stage 3: point-in-time fundamentals + flow scores ────────────────────
+    fund_data = _pit_fundamentals(db_path, scored, price_data, as_of)
+    cong_raw, fundflow_raw = _flow_scores(db_path, scored, as_of)
 
-    price_ranked = sorted(trend_ok, key=_price_composite, reverse=True)
-    shortlist_set = set(price_ranked[:prefilter_n])
-    # Always include force_include tickers that passed the trend gate
-    if force_include:
-        for t in force_include:
-            if t in price_data and t not in shortlist_set:
-                shortlist_set.add(t)
-                log.info("Force-including %s in shortlist", t)
-    shortlist = sorted(shortlist_set, key=_price_composite, reverse=True)
-    n_forced = len(shortlist_set) - min(prefilter_n, len(price_ranked))
-    log.info("Shortlist: %d tickers (%d forced)", len(shortlist), n_forced)
-
-    # ── Stage 3: fundamentals ─────────────────────────────────────────────────
-    fund_data = _fetch_fundamentals(shortlist)
-
-    # ── Stage 4: full 6-factor composite ─────────────────────────────────────
-    ey_raw = {t: fund_data[t]["earnings_yield"] for t in shortlist}
-    roe_raw = {t: fund_data[t]["roe"] for t in shortlist}
-
-    z_ey = _zscore_series(ey_raw)
-    z_roe = _zscore_series(roe_raw)
-
-    # Recompute price z-scores over shortlist only (tighter cross-section)
-    z_mom2 = _zscore_series({t: price_data[t]["momentum_12_1"] for t in shortlist})
-    z_vol2 = _zscore_series(
+    # ── Stage 4: single z-pass + canonical composite ─────────────────────────
+    z_mom = _zscore_series({t: price_data[t]["momentum_12_1"] for t in scored})
+    z_trend = _zscore_series({t: price_data[t]["trend_200d"] for t in scored})
+    z_ey = _zscore_series({t: fund_data[t]["earnings_yield"] for t in scored})
+    z_roe = _zscore_series({t: fund_data[t]["roe"] for t in scored})
+    z_cong = _zscore_series(cong_raw)
+    z_fund = _zscore_series(fundflow_raw)
+    # Display-only (pre-registered out of the composite):
+    z_vol_inv = _zscore_series(
         {
             t: (-v if (v := price_data[t]["vol_252d"]) is not None else None)
-            for t in shortlist
+            for t in scored
         }
     )
-    z_shr2 = _zscore_series({t: price_data[t]["sharpe_12m"] for t in shortlist})
+    z_shr = _zscore_series({t: price_data[t]["sharpe_12m"] for t in scored})
 
     def _composite(t: str) -> float:
-        scores = [z_mom2[t], z_vol2[t], z_shr2[t], z_ey[t], z_roe[t]]
-        valid = [s for s in scores if s is not None]
-        return sum(valid) / len(valid) if valid else -999.0
+        # Mirror of composite.build_blocks for dict inputs: nanmean of the
+        # available factors per block, nanmean of the available blocks.
+        blocks = []
+        for pair in (
+            (z_mom[t], z_trend[t]),
+            (z_ey[t], z_roe[t]),
+            (z_cong[t], z_fund[t]),
+        ):
+            valid = [v for v in pair if v is not None]
+            if valid:
+                blocks.append(sum(valid) / len(valid))
+        return sum(blocks) / len(blocks) if blocks else -999.0
 
-    ranked = sorted(shortlist, key=_composite, reverse=True)
-    top = ranked[:top_n]
-    # Always include force_include tickers even if outside top_n
-    forced_extra = [
-        t for t in (force_include or []) if t in price_data and t not in top
-    ]
-    to_persist = top + forced_extra
+    ranked = sorted(scored, key=_composite, reverse=True)
+    rank_of = {t: i for i, t in enumerate(ranked, start=1)}
+    top = set(ranked[:top_n])
+    forced_set = {t for t in (force_include or []) if t in rank_of and t not in top}
+    to_persist = sorted(top | forced_set, key=lambda t: rank_of[t])
 
     candidates: list[Candidate] = []
-    for rank, ticker in enumerate(to_persist, start=1):
+    for ticker in to_persist:
         pd_ = price_data[ticker]
-        z_lv = z_vol2[ticker]
         comp = _composite(ticker)
         candidates.append(
             Candidate(
@@ -415,13 +499,17 @@ def run_discovery(
                 above_200d_sma=pd_["above_200d_sma"],
                 earnings_yield=fund_data[ticker]["earnings_yield"],
                 roe=fund_data[ticker]["roe"],
-                z_momentum=z_mom2[ticker],
-                z_low_vol=z_lv,
-                z_sharpe=z_shr2[ticker],
+                z_momentum=z_mom[ticker],
+                z_low_vol=z_vol_inv[ticker],
+                z_sharpe=z_shr[ticker],
                 z_value=z_ey[ticker],
                 z_quality=z_roe[ticker],
                 composite_score=round(comp, 4),
-                composite_rank=rank,
+                composite_rank=rank_of[ticker],
+                z_trend=z_trend[ticker],
+                z_congress=z_cong[ticker],
+                z_fund_flow=z_fund[ticker],
+                forced=ticker in forced_set,
             )
         )
 

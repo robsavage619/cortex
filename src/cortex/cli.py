@@ -126,7 +126,6 @@ def _cmd_discover(args: argparse.Namespace) -> None:
     candidates = run_discovery(
         settings.duckdb_path,
         top_n=args.top_n,
-        prefilter_n=args.prefilter_n,
         force_include=force,
     )
     print(f"Discovered {len(candidates)} candidates")
@@ -513,6 +512,16 @@ def _cmd_backtest(args: argparse.Namespace) -> None:
     deciles = "  ".join(f"D{d + 1}:{c:+.0%}" for d, c in enumerate(cortex.decile_cagr))
     print("   " + deciles)
     print()
+    gate_parts = []
+    for f in rep.factor_ics:
+        if f.factor in ("congress", "fund"):
+            verdict = "PASS" if abs(f.ic_tstat_nw) >= 3.0 else "FAIL"
+            gate_parts.append(f"{f.factor} {f.ic_tstat_nw:.2f} {verdict}")
+    comp = rep.variants[0]
+    comp_verdict = "PASS" if abs(comp.ic_tstat_nw) >= 3.0 else "FAIL"
+    gate_parts.append(f"composite {comp.ic_tstat_nw:.2f} {comp_verdict}")
+    print(f"  PRE-REGISTRATION GATE (NW t >= 3.0): {' | '.join(gate_parts)}")
+    print()
     print(
         "  READ: a factor/composite is 'real' only at NW (Newey-West) IC t-stat ≥ 3.0"
     )
@@ -759,20 +768,15 @@ def main() -> None:
     sub.add_parser("mirror", help="Regenerate vault markdown mirror")
     sub.add_parser("rag-index", help="Embed vault notes into research_chunks")
 
-    discover_p = sub.add_parser("discover", help="Run CORTEX 6-factor discovery")
+    discover_p = sub.add_parser(
+        "discover", help="Run CORTEX discovery (the backtested composite, live)"
+    )
     discover_p.add_argument(
         "--top-n",
         type=int,
         default=30,
         metavar="N",
         help="Number of candidates to keep (default: 30)",
-    )
-    discover_p.add_argument(
-        "--prefilter-n",
-        type=int,
-        default=150,
-        metavar="N",
-        help="Shortlist size before fundamentals (default: 150)",
     )
 
     vol_p = sub.add_parser(
