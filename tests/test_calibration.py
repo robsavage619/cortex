@@ -124,3 +124,47 @@ def test_process_score_separates_decision_from_outcome(db):
     assert report.process_score == 1.0
     assert report.decision_counts["good"] == 1
     assert len(report.trend) == 1
+
+
+def test_single_review_does_not_crash(db):
+    _seed(db, "rob", conviction=5, outcome="correct")
+    report = compute(db)
+    assert report.brier_score == pytest.approx(0.0)
+    assert len(report.trend) == 1
+    assert report.trend[0].brier_rolling10 is None
+
+
+def test_all_unclear_outcomes_returns_empty_report(db):
+    for _ in range(3):
+        _seed(db, "rob", conviction=3, outcome="unclear")
+    report = compute(db)
+    assert report.brier_score == 0.0
+    assert report.buckets == []
+    assert report.trend == []
+
+
+def test_trend_cumulative_vs_rolling_diverge_on_recent_shift(db):
+    # 10 correct high-conviction reviews, then 10 wrong ones. The cumulative
+    # series smooths the collapse; the rolling-10 series must expose it.
+    for _ in range(10):
+        _seed(db, "rob", conviction=5, outcome="correct")
+    for _ in range(10):
+        _seed(db, "rob", conviction=5, outcome="wrong")
+    report = compute(db)
+    last = report.trend[-1]
+    assert last.brier_rolling10 is not None
+    # Rolling window is all-wrong at conviction 5 → Brier = (1.0 - 0)^2 = 1.0
+    assert last.brier_rolling10 == pytest.approx(1.0)
+    # Cumulative mixes both halves → about 0.5, far below the true recent 1.0
+    assert last.brier_cumulative == pytest.approx(0.5, abs=0.05)
+    assert last.brier_rolling10 > last.brier_cumulative
+
+
+def test_rolling_none_until_ten_graded(db):
+    for _ in range(9):
+        _seed(db, "rob", conviction=4, outcome="correct")
+    report = compute(db)
+    assert all(p.brier_rolling10 is None for p in report.trend)
+    _seed(db, "rob", conviction=4, outcome="correct")
+    report = compute(db)
+    assert report.trend[-1].brier_rolling10 is not None

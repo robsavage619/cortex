@@ -1,5 +1,6 @@
 import {
   CartesianGrid,
+  Legend,
   Line,
   LineChart,
   ReferenceLine,
@@ -74,8 +75,9 @@ export function Calibration() {
   }))
 
   const trend = (data?.trend ?? []).map(p => ({
-    date:  fmtDate(p.date),
-    brier: Number(p.brier.toFixed(3)),
+    date:      fmtDate(p.date),
+    cumulative: Number(p.brier_cumulative.toFixed(3)),
+    rolling10:  p.brier_rolling10 != null ? Number(p.brier_rolling10.toFixed(3)) : null,
   }))
 
   const processScore = data?.process_score
@@ -219,9 +221,20 @@ export function Calibration() {
                             fontSize: '11px',
                           }}
                         />
-                        <Line type="monotone" dataKey="brier"
+                        <Line type="monotone" dataKey="cumulative" name="Cumulative"
                           stroke="#4ade80" strokeWidth={2}
                           dot={{ fill: '#4ade80', r: 3, strokeWidth: 0 }}
+                        />
+                        <Line type="monotone" dataKey="rolling10" name="Last 10 reviews"
+                          stroke="#fbbf24" strokeWidth={2} strokeDasharray="4 3"
+                          dot={{ fill: '#fbbf24', r: 3, strokeWidth: 0 }}
+                          connectNulls
+                        />
+                        <Legend
+                          wrapperStyle={{
+                            fontFamily: 'var(--font-mono)',
+                            fontSize: '10px',
+                          }}
                         />
                       </LineChart>
                     </ResponsiveContainer>

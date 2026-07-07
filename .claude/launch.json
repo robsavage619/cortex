@@ -13,6 +13,12 @@
       "runtimeExecutable": "uv",
       "runtimeArgs": ["run", "cortex", "serve", "--port", "8000"],
       "port": 8000
+    },
+    {
+      "name": "api-dev",
+      "runtimeExecutable": "env",
+      "runtimeArgs": ["CORTEX_AUTH_USERS=dev:dev", "uv", "run", "cortex", "serve", "--port", "8321"],
+      "port": 8321
     }
   ]
 }

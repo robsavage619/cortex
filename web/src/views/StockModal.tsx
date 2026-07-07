@@ -496,6 +496,26 @@ function OverviewTab({
           </div>
         )}
 
+        {/* Source failures — absence of a section below must not read as
+            "no activity" when the fetch actually errored */}
+        {ctx && (ctx.congress_trades_error || ctx.insider_buys_error || ctx.activist_stakes_error || ctx.executive_mentions_error || ctx.market_error) && (
+          <div className="border border-down/30 bg-down/[0.05] p-3">
+            <span className="label block text-down">SOME DATA UNAVAILABLE</span>
+            <p className="mt-1 font-sans text-[11px] text-muted">
+              These sources failed to load, so their sections below may be missing — that is not the same as "no activity":{' '}
+              <span className="text-ink">
+                {[
+                  ctx.market_error && 'market data',
+                  ctx.congress_trades_error && 'congress trades',
+                  ctx.insider_buys_error && 'insider buys',
+                  ctx.activist_stakes_error && 'activist stakes',
+                  ctx.executive_mentions_error && 'executive mentions',
+                ].filter(Boolean).join(', ')}
+              </span>
+            </p>
+          </div>
+        )}
+
         {/* Congress trades — warn/amber / congressional */}
         {ctx?.congress_trades && ctx.congress_trades.length > 0 && (
           <div className="border border-border-dim border-l-4 border-l-warn/60 bg-warn/[0.04] p-4 space-y-2">

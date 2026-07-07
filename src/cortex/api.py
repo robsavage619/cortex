@@ -630,7 +630,14 @@ def calibration() -> dict[str, Any]:
         "overconfident": report.overconfident,
         "process_score": report.process_score,
         "decision_counts": report.decision_counts,
-        "trend": [{"date": p.date, "brier": p.brier} for p in report.trend],
+        "trend": [
+            {
+                "date": p.date,
+                "brier_cumulative": p.brier_cumulative,
+                "brier_rolling10": p.brier_rolling10,
+            }
+            for p in report.trend
+        ],
         "buckets": [
             {
                 "conviction": b.conviction,

@@ -94,3 +94,29 @@ def test_connect_read_only_raises_on_write(tmp_path):
         pytest.raises(duckdb.Error),
     ):
         ro.execute("INSERT INTO theses VALUES (NULL)")
+
+
+def test_reapplying_schema_preserves_migrated_column_values(tmp_path):
+    """DuckDB ≤1.5.3: ADD COLUMN IF NOT EXISTS with a DEFAULT re-applies the
+    default to every row on re-run. Migrations must never carry DEFAULTs —
+    this guards against the regression that wiped 1,978 amendment marks."""
+    db = tmp_path / "test.db"
+    with connect(db) as conn:
+        apply_schema(conn)
+        conn.execute(
+            "INSERT INTO congress_trades (id, senator, ticker, amended, ticker_ok)"
+            " VALUES ('x1', 'Doe', 'AAPL', TRUE, FALSE)"
+        )
+        conn.execute(
+            "INSERT INTO candidates (ticker, as_of_date, composite_score,"
+            " composite_rank, forced) VALUES ('AAPL', DATE '2026-01-01', 1.0,"
+            " 45, TRUE)"
+        )
+        apply_schema(conn)  # must be a true no-op on existing columns
+        amended, ticker_ok = conn.execute(
+            "SELECT amended, ticker_ok FROM congress_trades"
+        ).fetchone()
+        forced = conn.execute("SELECT forced FROM candidates").fetchone()[0]
+    assert amended is True
+    assert ticker_ok is False
+    assert forced is True

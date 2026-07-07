@@ -79,7 +79,8 @@ export interface DissentIn {
 
 export interface TrendPoint {
   date: string
-  brier: number
+  brier_cumulative: number
+  brier_rolling10: number | null
 }
 
 export interface CalibrationBucket {
@@ -177,6 +178,7 @@ export interface TickerContext {
   insider_buys_error?: string
   activist_stakes?: ActivistStake[]
   activist_stakes_error?: string
+  executive_mentions_error?: string
 }
 
 export interface PriceBar {

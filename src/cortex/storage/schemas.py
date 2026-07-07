@@ -245,12 +245,16 @@ MIGRATION_STATEMENTS = (
     "ALTER TABLE executive_mentions ADD COLUMN IF NOT EXISTS abn_20d DOUBLE",
     # v16 — congress integrity: amendment marking + ticker quarantine;
     # executive tri-state (NULL meaningful + NULL analyzed_at = never analyzed).
-    "ALTER TABLE congress_trades ADD COLUMN IF NOT EXISTS amended BOOLEAN DEFAULT FALSE",  # noqa: E501
+    # NEVER put a DEFAULT on these ADD COLUMNs: in DuckDB (≤ v1.5.3),
+    # re-running ADD COLUMN IF NOT EXISTS with a DEFAULT re-applies the
+    # default to EVERY row even when the column already exists — it wiped
+    # 1,978 amendment marks before this was caught. NULL means false here.
+    "ALTER TABLE congress_trades ADD COLUMN IF NOT EXISTS amended BOOLEAN",
     "ALTER TABLE congress_trades ADD COLUMN IF NOT EXISTS ticker_ok BOOLEAN",
     "ALTER TABLE executive_mentions ADD COLUMN IF NOT EXISTS analyzed_at TIMESTAMP",
     # v17 — brain alignment: discovery computes the backtested composite;
     # candidates carry the canonical factor z-scores + honest forced flag.
-    "ALTER TABLE candidates ADD COLUMN IF NOT EXISTS forced BOOLEAN DEFAULT FALSE",
+    "ALTER TABLE candidates ADD COLUMN IF NOT EXISTS forced BOOLEAN",
     "ALTER TABLE candidates ADD COLUMN IF NOT EXISTS z_trend DOUBLE",
     "ALTER TABLE candidates ADD COLUMN IF NOT EXISTS z_congress DOUBLE",
     "ALTER TABLE candidates ADD COLUMN IF NOT EXISTS z_fund_flow DOUBLE",

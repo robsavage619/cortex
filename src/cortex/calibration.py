@@ -20,8 +20,17 @@ class BucketStats:
 
 @dataclass
 class TrendPoint:
+    """One reviewed-thesis point on the calibration trend.
+
+    ``brier_cumulative`` is the Brier score over ALL graded reviews up to
+    this date — smooth by construction, so it masks recent shifts.
+    ``brier_rolling10`` is the Brier over the trailing 10 graded reviews
+    (None until 10 exist) — the honest recent-performance read.
+    """
+
     date: str
-    brier: float
+    brier_cumulative: float
+    brier_rolling10: float | None = None
 
 
 @dataclass
@@ -139,10 +148,20 @@ def compute(db_path: Path | None = None) -> CalibrationReport:
         author_true.setdefault(row.author, []).append(binary)
         author_prob.setdefault(row.author, []).append(prob)
         if row.reviewed_on is not None:
+            rolling = (
+                float(
+                    brier_score_loss(y_true[-10:], y_prob[-10:], pos_label=1)
+                )
+                if len(y_true) >= 10
+                else None
+            )
             trend.append(
                 TrendPoint(
                     date=row.reviewed_on.isoformat(),
-                    brier=float(brier_score_loss(y_true, y_prob, pos_label=1)),
+                    brier_cumulative=float(
+                        brier_score_loss(y_true, y_prob, pos_label=1)
+                    ),
+                    brier_rolling10=rolling,
                 )
             )
 
