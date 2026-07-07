@@ -1,3 +1,13 @@
+"""Markdown mirror of theses into the Obsidian vault.
+
+Not dead code, despite never being read back by the SPA: the vault notes
+this writes are the corpus ``rag.index_vault`` embeds into
+``research_chunks`` (the RAG citations behind /research/*), and they are
+Rob's Obsidian-side view of the thesis journal. Runs on every thesis
+mutation via ``api._maybe_mirror`` — unchanged notes are skipped so a
+one-field PATCH doesn't rewrite the whole vault.
+"""
+
 from __future__ import annotations
 
 import logging
@@ -96,7 +106,9 @@ def generate(
 ) -> int:
     """Write thesis notes + dashboard.md to vault_dir.
 
-    Returns the count of files written.
+    Notes whose rendered content is unchanged are skipped (cheap read +
+    compare), so per-thesis-mutation mirroring doesn't rewrite the vault.
+    Returns the count of files actually written.
     """
     theses = list_theses(db_path=db_path)
     today_ = today or date.today()
@@ -105,15 +117,33 @@ def generate(
     theses_dir.mkdir(parents=True, exist_ok=True)
 
     written = 0
+    skipped = 0
     for t in theses:
         note_path = theses_dir / f"{t.id}.md"
         content = _thesis_note(t)
+        try:
+            if note_path.read_text(encoding="utf-8") == content:
+                skipped += 1
+                continue
+        except OSError:
+            pass  # missing/unreadable → write fresh
         note_path.write_text(content, encoding="utf-8")
         written += 1
 
     dashboard = vault_dir / "dashboard.md"
-    dashboard.write_text(_dashboard_note(theses, today_), encoding="utf-8")
-    written += 1
+    dash_content = _dashboard_note(theses, today_)
+    try:
+        dash_unchanged = dashboard.read_text(encoding="utf-8") == dash_content
+    except OSError:
+        dash_unchanged = False
+    if not dash_unchanged:
+        dashboard.write_text(dash_content, encoding="utf-8")
+        written += 1
 
-    logger.info("Mirror: wrote %d files to %s", written, vault_dir)
+    logger.info(
+        "Mirror: wrote %d files to %s (%d unchanged, skipped)",
+        written,
+        vault_dir,
+        skipped,
+    )
     return written

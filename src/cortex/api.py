@@ -272,6 +272,32 @@ def factor_history(factor: str | None = None) -> dict[str, Any]:
     }
 
 
+# One live subprocess per admin job. A Railway cron that retries on 5xx must
+# not stack a second memory-heavy child while the first is still running.
+_admin_jobs: dict[str, subprocess.Popen[bytes]] = {}
+_admin_jobs_lock = threading.Lock()
+
+
+def _spawn_admin_job(job: str, argv: list[str]) -> dict[str, Any]:
+    with _admin_jobs_lock:
+        existing = _admin_jobs.get(job)
+        if existing is not None and existing.poll() is None:
+            return {"banner": _BANNER, "status": "already_running", "pid": existing.pid}
+        try:
+            proc = subprocess.Popen(  # noqa: S603 - fixed argv, no shell
+                argv,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+        except Exception as exc:  # noqa: BLE001 - surface spawn failure visibly
+            raise HTTPException(
+                status_code=500, detail=f"failed to start {job}: {exc}"
+            ) from exc
+        _admin_jobs[job] = proc
+    return {"banner": _BANNER, "status": "started", "pid": proc.pid}
+
+
 @app.post("/admin/snapshot-factors")
 def admin_snapshot_factors() -> dict[str, Any]:
     """Spawn `cortex snapshot-factors` as an isolated subprocess.
@@ -279,37 +305,20 @@ def admin_snapshot_factors() -> dict[str, Any]:
     The backtest pulls S&P 500 prices through yfinance/numpy and is memory-heavy
     — same OOM hazard as a sync — so it runs detached like /refresh rather than
     in the web worker. Triggered nightly by a Railway cron service."""
-    argv = [sys.executable, "-m", "cortex.cli", "snapshot-factors"]
-    try:
-        subprocess.Popen(  # noqa: S603 - fixed argv, no shell, no user input
-            argv,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            start_new_session=True,
-        )
-    except Exception as exc:  # noqa: BLE001 - surface spawn failure visibly
-        raise HTTPException(
-            status_code=500, detail=f"failed to start snapshot: {exc}"
-        ) from exc
-    return {"banner": _BANNER, "status": "started"}
+    return _spawn_admin_job(
+        "snapshot", [sys.executable, "-m", "cortex.cli", "snapshot-factors"]
+    )
 
 
 @app.post("/admin/sync/executive")
 def admin_sync_executive() -> dict[str, Any]:
     """Fetch executive mentions from whitehouse.gov and store them in the DB."""
-    argv = [sys.executable, "-m", "cortex.cli", "exec-mention", "sync"]
-    try:
-        subprocess.Popen(  # noqa: S603 - fixed argv, no shell, no user input
-            argv,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            start_new_session=True,
-        )
-    except Exception as exc:  # noqa: BLE001 - surface spawn failure visibly
-        raise HTTPException(
-            status_code=500, detail=f"failed to start executive sync: {exc}"
-        ) from exc
-    return {"banner": _BANNER, "status": "started"}
+    return _spawn_admin_job(
+        "executive", [sys.executable, "-m", "cortex.cli", "exec-mention", "sync"]
+    )
+
+
+_backup_lock = threading.Lock()
 
 
 @app.post("/admin/backup")
@@ -318,11 +327,15 @@ def admin_backup(keep: int = 7) -> dict[str, Any]:
     service (the volume-owning web process must do this, not the cron box)."""
     from cortex.backup import prune_backups, run_backup
 
+    if not _backup_lock.acquire(blocking=False):
+        return {"banner": _BANNER, "status": "already_running"}
     try:
         dest = run_backup(_db(), keep=keep)
         removed = prune_backups(_db(), keep=keep)
     except Exception as exc:  # noqa: BLE001 - surface failure to the caller
         raise HTTPException(status_code=500, detail=f"backup failed: {exc}") from exc
+    finally:
+        _backup_lock.release()
     return {"banner": _BANNER, "snapshot": str(dest), "pruned": removed}
 
 

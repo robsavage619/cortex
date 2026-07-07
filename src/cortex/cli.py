@@ -667,7 +667,7 @@ def _cmd_snapshot_factors(args: argparse.Namespace) -> None:
                 ON CONFLICT (snapshot_date, factor) DO UPDATE SET
                   ic_mean = excluded.ic_mean, ic_tstat = excluded.ic_tstat,
                   ic_tstat_nw = excluded.ic_tstat_nw, coverage = excluded.coverage,
-                  n_months = excluded.n_months, recorded_at = CURRENT_TIMESTAMP
+                  n_months = excluded.n_months, recorded_at = now()
                 """,
                 list(r),
             )

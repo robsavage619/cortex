@@ -40,8 +40,9 @@ Single user (Rob). Not a product. Optimise for research iteration speed.
 - Default `from_year=2017` everywhere. Do not change without backtesting first.
 
 ### Pre-registration threshold: t ≥ 3.0 (Bonferroni-corrected)
-- Congress factor t=2.40, fund t=2.58, CORTEX composite t=1.89 as of last backtest
+- Congress factor t=2.59, fund t=2.29, CORTEX composite t=2.40 as of last backtest (2026-07-06)
 - None clear the bar yet — no live trading until at least one factor does
+- **Journal 2026-07-06 (post-remediation):** old → new: congress 2.40→2.59 (+0.19, amendment exclusion removed ~1,978 double-counted rows), fund 2.58→2.29 (-0.29, EXIT preservation changed the event set), composite 1.89→2.40 (+0.51, brain alignment fixed: discovery now computes the same 3-block equal-weight signal as the backtest). Long-short spread NW t=2.98 (was not tracked). No factor clears t≥3.0.
 
 ### Factor signals in scope
 - `congress_trades` — EDGAR bulk EFTS JSON
@@ -51,5 +52,6 @@ Single user (Rob). Not a product. Optimise for research iteration speed.
 - `quality` — ROE + gross-profits-to-assets (Novy-Marx 2013, planned)
 
 ## DB schema touch-points
-- `insider_buys` table — `id` is a 16-char SHA256 dedup key on `(issuer_cik, filer_cik, tx_date)`
+- `insider_buys` table — `id` is a 16-char SHA256 dedup key on `(issuer_cik, filer_cik, tx_date, shares, accession)` (2026-07-06: old 3-field key collapsed 34% of rows — same-filer same-day lots)
+- Migration `ADD COLUMN IF NOT EXISTS` statements must NEVER carry a DEFAULT — DuckDB (≤1.5.3) re-applies the default to every row on re-run, silently wiping backfilled values
 - All sync commands are idempotent via `ON CONFLICT (id) DO NOTHING`
