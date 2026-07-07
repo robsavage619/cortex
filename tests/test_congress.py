@@ -250,7 +250,8 @@ def test_amendment_marking_keeps_newest_unmarked(tmp_path):
             ).fetchall()
         )
     assert rows["https://efd/ptr/original"] is True  # superseded
-    assert rows["https://efd/ptr/original_amended"] is False  # kept
+    # Kept row stays NULL (migrations carry no DEFAULT — NULL means live).
+    assert rows["https://efd/ptr/original_amended"] is not True
 
 
 def test_amendment_marking_ignores_distinct_trades(tmp_path):
