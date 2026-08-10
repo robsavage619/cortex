@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import duckdb
 
-SCHEMA_VERSION = 20
+SCHEMA_VERSION = 21
 
 DDL_STATEMENTS = (
     """
@@ -255,6 +255,24 @@ DDL_STATEMENTS = (
     -- Coverage is per SESSION DATE, not per ticker: a day FINRA never
     -- published and a day we never fetched are otherwise indistinguishable,
     -- and the difference decides whether a gap in the series is real.
+    -- Every backtest is a trial. Harvey & Liu's Sharpe haircut takes the
+    -- CUMULATIVE number of trials as an input, and it is the one number
+    -- researchers never record — the whole complaint of that literature. A
+    -- per-run test count is not it: 13 configurations in one run is one
+    -- research decision, whereas 40 runs over a month is 40 chances to have
+    -- found something by luck.
+    CREATE TABLE IF NOT EXISTS research_trials (
+        id           INTEGER   PRIMARY KEY,
+        ran_at       TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        n_tests      INTEGER   NOT NULL,
+        factors      VARCHAR   NOT NULL,
+        best_factor  VARCHAR,
+        best_tstat   DOUBLE,
+        mean_abs_rho DOUBLE,
+        git_sha      VARCHAR
+    )
+    """,
+    """
     CREATE TABLE IF NOT EXISTS short_volume_coverage (
         date       DATE      PRIMARY KEY,
         rows       INTEGER   NOT NULL,

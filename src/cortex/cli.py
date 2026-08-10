@@ -586,7 +586,7 @@ def _cmd_backtest(args: argparse.Namespace) -> None:
     deciles = "  ".join(f"D{d + 1}:{c:+.0%}" for d, c in enumerate(cortex.decile_cagr))
     print("   " + deciles)
     print()
-    from cortex.significance import bhy, build_gate
+    from cortex.significance import bhy, build_gate, record_trial
 
     n_tests = len(rep.factor_ics) + len(rep.variants)
     gate = build_gate(n_tests)
@@ -613,6 +613,36 @@ def _cmd_backtest(args: argparse.Namespace) -> None:
     print(f"    {' | '.join(gate_parts)}")
     survivors = ", ".join(sorted(sweep.passed)) if sweep.passed else "none"
     print(f"    BHY sweep over all {len(tstats)} factors — discoveries: {survivors}")
+
+    # Record this run as a trial. Harvey & Liu's Sharpe haircut takes the
+    # cumulative count as an input and it is the number nobody keeps.
+    best = max(tstats.items(), key=lambda kv: abs(kv[1])) if tstats else (None, None)
+    rho = None
+    if rep.factor_corr is not None:
+        vals = [
+            abs(v)
+            for i, row in enumerate(rep.factor_corr.matrix)
+            for j, v in enumerate(row)
+            if i != j and v is not None
+        ]
+        rho = sum(vals) / len(vals) if vals else None
+    try:
+        from cortex.config import load_settings as _ls
+
+        cumulative = record_trial(
+            _ls().duckdb_path,
+            n_tests=n_tests,
+            factors=list(tstats),
+            best_factor=best[0],
+            best_tstat=best[1],
+            mean_abs_rho=rho,
+        )
+        print(
+            f"    Cumulative trials logged: {cumulative} "
+            "(input to the Harvey-Liu Sharpe haircut)"
+        )
+    except Exception as exc:  # noqa: BLE001 - never fail a report on bookkeeping
+        print(f"    Trial log unavailable: {exc}", file=sys.stderr)
     print()
     print("  READ: the bar is recomputed from this run's test count, not hardcoded.")
     print("  Zoo draws (momentum/trend/vol/value/quality) inherit the published")

@@ -53,6 +53,8 @@ Single user (Rob). Not a product. Optimise for research iteration speed.
 
 - **Journal 2026-08-10d (House backfill + the transaction-code defect):** congress 2.24→**1.72**, coverage 33%→**61%**, composite 1.90→1.83, L/S 1.61→1.41 gross / 1.21→1.02 net. Two changes, both data-completeness: (a) the House PTR backfill had never been run, so all 967 House rows were dated 2026 and the congress factor was **Senate-only for 2017-2025**; backfilling added 13,584 trades (house now 14,551 vs senate 11,676). (b) That alone changed *nothing* — `_congress_sign` only understood the Senate's English words ("Purchase"/"Sale (Full)") while House PTRs carry SEC letter codes ("P"/"S"/"S (partial)"), so ~14,300 of 14,551 House rows returned 0 and were dropped. Fixed; congress events 12.6k→23.2k. The halving of the signal is what Ziobrowski 2011 predicts — the House effect is weaker than the Senate's (55 vs 85 bps/month, power dilution) — so pooling dilutes. **The old 2.24 was a Senate-only number.** Congress log-scale retested on the complete two-chamber data and reverted again: 1.72→1.13, so the "signal lives in a handful of large disclosures" finding holds across both chambers.
 
+- **Journal 2026-08-10e (short-interest signal, schema v20/v21):** new `short` factor at NW t=**1.87** (coverage 79%, +58% of months) — third-strongest, correct sign, pre-registered before the data was downloaded. Adding it moved the own-family bar 3.21→3.24, which is the derived-per-run gate working as intended. Nothing clears. Also added: `research_trials` table logging cumulative trial count, the Harvey-Liu haircut input nobody records.
+
 ### Price data (post-2026-07-16)
 - All research prices go through `cortex.sources.prices` (DuckDB `prices` + `price_coverage`, schema v18) — never call `yf.download` directly in research code
 - yfinance quirks: dead tickers come back as all-NaN COLUMNS in mixed batches but as an EMPTY frame when the whole batch is dead — the cache uses a SPY canary probe to distinguish "all dead" from "yfinance down" before recording names as unpriceable
@@ -87,6 +89,17 @@ Single user (Rob). Not a product. Optimise for research iteration speed.
 - An EXIT row has `value = 0` and `shares = 0` by construction; its magnitude lives in `prev_shares`. Never size a fund event off `value` alone
 - The table holds quarter-over-quarter **diffs for 14 curated managers**, not full portfolios — there are no HOLD rows. Cohen/Polk/Silli conviction weighting (position weight vs a passive benchmark) is therefore NOT computable from it
 - Buys and sells are not mirror images: Agarwal 2013 finds 13F acquisitions +7.06% DGTW at 12m (t=3.95) vs disposals +2.94% (t=1.42); CORTEX signs them symmetrically ±1, which is unsupported and now testable
+
+## Short interest (FINRA Reg SHO, post-2026-08-10)
+- FINRA's CDN answers **403, not 404**, for any file it is not serving — a Sunday and a 2017 session are identical at the HTTP layer. Treating 403 as fatal aborts a backfill on its first weekend
+- **The archive is rolling, ~8 years.** ~2018-08 onward returns 200; 2018-07-02 and earlier returns 403. The short factor cannot reach the 2017 backtest start and has zero coverage for the first ~19 months, so its t-stat sits on a shorter, later sample than every other factor
+- Flow, not level: Boehmer finds short flow drives out short interest in 13 of 15 reversed sorts. Reg SHO is flow
+- Construction is fixed from the paper and must NOT be swept: sfrac = short/total volume, 5-day formation, 20-day hold, sign negative
+
+## Fund factor concentration
+- **Renaissance Technologies is 73.7% of `fund_holdings` rows since 2017**, Bridgewater another 13.3%. The six high-conviction managers are 3.3% combined
+- So the factor does not measure the Best Ideas mechanism it cites — that paper is about concentrated conviction, RenTec runs diversified stat-arb. Any fund-factor result is largely a statement about one manager
+- Filer-type tagging is NOT worth building: 96% of rows are already hedge funds because the manager list was curated that way
 
 ## Congress factor semantics
 - The two chambers speak different languages: Senate eFD writes English ("Purchase", "Sale (Full)"); House PTRs carry SEC letter codes ("P", "S", "S (partial)", "E"). Any parser touching `transaction_type` must handle both — test the leading token as a code FIRST, or a bare "s" falls through and "p" matches the "partial" in "S (partial)"

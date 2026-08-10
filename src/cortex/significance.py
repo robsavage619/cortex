@@ -25,6 +25,7 @@ assignment is fixed here, in code, ahead of the run.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from statistics import NormalDist
 
 # Two-sided significance level for every threshold below.
@@ -121,6 +122,69 @@ class Gate:
 
     def verdict(self, factor: str, tstat: float) -> str:
         return "PASS" if abs(tstat) >= self.threshold_for(factor) else "FAIL"
+
+
+def record_trial(
+    db_path: Path,
+    *,
+    n_tests: int,
+    factors: list[str],
+    best_factor: str | None,
+    best_tstat: float | None,
+    mean_abs_rho: float | None,
+) -> int:
+    """Append this run to the trial log and return the cumulative trial count.
+
+    Bailey & López de Prado's central practical claim is that a backtest whose
+    author cannot say how many trials were attempted is worthless, and Harvey &
+    Liu's Sharpe haircut literally takes that count as an input. It is the one
+    number nobody records. This records it.
+
+    Cumulative, not per-run: thirteen configurations inside one backtest is one
+    research decision; forty backtests over a month is forty chances to have
+    found something by luck, and only the second number belongs in a haircut.
+    """
+    from cortex.storage.db import connect
+    from cortex.storage.schemas import apply_schema
+
+    sha = None
+    try:
+        import subprocess
+
+        sha = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=False,
+            cwd=Path(__file__).resolve().parent.parent.parent,
+        ).stdout.strip()
+    except Exception:  # noqa: BLE001 - provenance is nice to have, not required
+        sha = None
+
+    with connect(db_path) as conn:
+        apply_schema(conn)
+        row = conn.execute(
+            "SELECT COALESCE(MAX(id), 0) FROM research_trials"
+        ).fetchone()
+        next_id = (row[0] if row else 0) + 1
+        conn.execute(
+            "INSERT INTO research_trials "
+            "(id, n_tests, factors, best_factor, best_tstat, mean_abs_rho, git_sha) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            [
+                next_id,
+                n_tests,
+                ",".join(sorted(factors)),
+                best_factor,
+                best_tstat,
+                mean_abs_rho,
+                sha or None,
+            ],
+        )
+        total = conn.execute(
+            "SELECT COALESCE(SUM(n_tests), 0) FROM research_trials"
+        ).fetchone()
+    return int(total[0]) if total else n_tests
 
 
 def build_gate(n_tests: int, alpha: float = ALPHA) -> Gate:
