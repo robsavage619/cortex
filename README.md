@@ -12,7 +12,7 @@
   <a href="https://fastapi.tiangolo.com/"><img src="https://img.shields.io/badge/api-FastAPI-009688" alt="FastAPI"/></a>
   <a href="https://duckdb.org/"><img src="https://img.shields.io/badge/store-DuckDB%20%2B%20VSS-fff100" alt="DuckDB"/></a>
   <a href="web/"><img src="https://img.shields.io/badge/frontend-React%2018%20%2B%20Vite-61dafb" alt="React 18"/></a>
-  <img src="https://img.shields.io/badge/tests-125%20passing-34D399" alt="tests"/>
+  <img src="https://img.shields.io/badge/tests-141%20passing-34D399" alt="tests"/>
   <img src="https://img.shields.io/badge/paid%20APIs-zero-8B5CF6" alt="zero paid APIs"/>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-source--available-lightgrey" alt="license"/></a>
 </p>
@@ -39,7 +39,7 @@ This repository is published as a portfolio piece. The source code is available 
 | **Frontend** | React 18 + TypeScript + Vite SPA; TanStack Query; lightweight-charts + Recharts; custom glass-premium design system |
 | **LLM integration** | fastembed local embeddings for RAG; Claude Haiku for significance classification, gated to production so local runs never bill |
 | **Deployment** | Railway (FastAPI + DuckDB on a persistent volume); nixpacks custom build (Python + Node in one image); cron-over-HTTP architecture for volume-owning service; automated freshness monitoring |
-| **Engineering process** | Conventional commits; 125 tests covering the scoring core (discovery composite, swing screen, calibration math, dedupe keys, thesis CRUD, storage, RAG, backtest helpers); `ruff` clean; `pyright` tracked (legacy type debt being paid down) |
+| **Engineering process** | Conventional commits; 141 tests covering the scoring core (discovery composite, swing screen, calibration math, dedupe keys, thesis CRUD, storage, RAG, backtest helpers); `ruff` clean; `pyright` tracked (legacy type debt being paid down) |
 
 ---
 
@@ -189,8 +189,8 @@ Built to run unattended on a single Railway service with data staying fresh on i
 
 ## Engineering quality
 
-- **125 tests** covering the scoring core — discovery composite and rank semantics, swing-screen math, calibration (including edge cases), dedupe-key integrity, thesis CRUD, storage, RAG, and backtest helpers — plus HTTP-mocked data sources (`respx`). Sync pipelines are integration-tested against parsers, not live EDGAR; coverage is strongest in the decision-making code and thinner in fetch plumbing.
-- **Clean static analysis:** `ruff check` and `ruff format` pass repo-wide; `pyright` (basic) reports zero errors across `src/`.
+- **141 tests** covering the scoring core — discovery composite and rank semantics, swing-screen math, calibration (including edge cases), dedupe-key integrity, thesis CRUD, storage, RAG, and backtest helpers — plus HTTP-mocked data sources (`respx`). Sync pipelines are integration-tested against parsers, not live EDGAR; coverage is strongest in the decision-making code and thinner in fetch plumbing.
+- **Static analysis:** `ruff check` and `ruff format` pass repo-wide. `pyright` (basic) is clean across the factor, storage, and decision core; 25 known errors remain, confined to two third-party-response parsers (`sources/house.py`, `sources/executive.py`) and tracked as type debt.
 - **Strict tooling:** `ruff` (format + lint + isort), `pyright` (basic), `uv` lockfile.
 - **Typed throughout:** `from __future__ import annotations`, `X | None` unions, dataclasses, Pydantic request models.
 - **Idempotent, schema-versioned storage** with a migration table.
