@@ -24,10 +24,26 @@ def seeded_db(tmp_path, monkeypatch):
             " amount, transaction_date, report_url, chamber)"
             " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             [
-                ("a1", "Doe", "AAPL", "Purchase", "$1k", date(2024, 1, 5), "u1",
-                 "senate"),
-                ("a2", "Doe", "AAPL", "Purchase", "$1k", date(2024, 1, 5), "u2",
-                 "senate"),
+                (
+                    "a1",
+                    "Doe",
+                    "AAPL",
+                    "Purchase",
+                    "$1k",
+                    date(2024, 1, 5),
+                    "u1",
+                    "senate",
+                ),
+                (
+                    "a2",
+                    "Doe",
+                    "AAPL",
+                    "Purchase",
+                    "$1k",
+                    date(2024, 1, 5),
+                    "u2",
+                    "senate",
+                ),
                 ("b1", "Roe", "BAD!!", "Sale", "$1k", date(2024, 2, 1), "u3", "house"),
                 ("c1", "Roe", "GMBL", "Sale", "$1k", date(2024, 3, 1), "u4", "house"),
             ],
@@ -80,3 +96,73 @@ def test_audit_report_renders(seeded_db):
     text = format_report(report)
     assert "congress_amendment_duplicates" in text
     assert report.to_json().startswith("{")
+
+
+def test_event_yield_catches_a_source_the_loader_cannot_read(tmp_path):
+    """The check exists because row-level audits missed four defects in a day.
+
+    A source can be perfectly well-formed on disk and still produce zero scored
+    events — 71,958 13F EXIT rows did exactly that, and 14,551 House rows
+    produced ~247. Both are invisible to every other check in this module and
+    glaring in the yield column.
+    """
+    db = tmp_path / "yield.db"
+    with connect(db) as conn:
+        apply_schema(conn)
+        # Well-formed rows whose transaction_type the sign parser cannot read.
+        conn.executemany(
+            "INSERT INTO congress_trades "
+            "(id, senator, ticker, transaction_type, amount, transaction_date, "
+            "disclosure_date, chamber) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            [
+                (
+                    f"x{i}",
+                    "Rep. Nobody",
+                    "AAPL",
+                    "GIBBERISH",
+                    "$1,001 - $15,000",
+                    date(2025, 1, 2),
+                    date(2025, 1, 20),
+                    "house",
+                )
+                for i in range(25)
+            ],
+        )
+
+    section = run_audit(db).sections["event_yield"]
+    assert section["congress_rows"] == 25
+    assert section["congress_events"] == 0
+    assert section["congress_yield"] == "0.0%"
+
+
+def test_event_yield_reports_a_healthy_source(tmp_path):
+    db = tmp_path / "ok.db"
+    with connect(db) as conn:
+        apply_schema(conn)
+        conn.execute(
+            "INSERT INTO congress_trades "
+            "(id, senator, ticker, transaction_type, amount, transaction_date, "
+            "disclosure_date, chamber) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                "a",
+                "Sen. Somebody",
+                "AAPL",
+                "Purchase",
+                "$1,001 - $15,000",
+                date(2025, 1, 2),
+                date(2025, 1, 20),
+                "senate",
+            ),
+        )
+    section = run_audit(db).sections["event_yield"]
+    assert section["congress_events"] == 1
+    assert section["congress_yield"] == "100.0%"
+
+
+def test_event_yield_handles_empty_tables(tmp_path):
+    db = tmp_path / "empty.db"
+    with connect(db) as conn:
+        apply_schema(conn)
+    section = run_audit(db).sections["event_yield"]
+    assert section["congress_rows"] == 0
+    assert section["congress_yield"] == "n/a (no rows)"

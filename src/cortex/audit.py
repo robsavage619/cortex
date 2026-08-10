@@ -93,9 +93,7 @@ def _suspicious_tickers(conn: Any) -> dict[str, Any]:
     """
     tickers = [
         r[0]
-        for r in conn.execute(
-            "SELECT DISTINCT ticker FROM congress_trades"
-        ).fetchall()
+        for r in conn.execute("SELECT DISTINCT ticker FROM congress_trades").fetchall()
     ]
     bad = sorted(t for t in tickers if not _TICKER_RE.match(t or ""))
     bad_rows = 0
@@ -165,8 +163,7 @@ def _fund_actions(conn: Any) -> dict[str, Any]:
 def _executive_analysis(conn: Any) -> dict[str, Any]:
     """executive_mentions: NULL `meaningful` conflates never-analyzed with off."""
     total, null_meaningful = conn.execute(
-        "SELECT count(*), count(*) FILTER (meaningful IS NULL) "
-        "FROM executive_mentions"
+        "SELECT count(*), count(*) FILTER (meaningful IS NULL) FROM executive_mentions"
     ).fetchone()
     return {
         "total_rows": total,
@@ -187,11 +184,70 @@ def _candidate_rank_fakes(conn: Any) -> dict[str, Any]:
     }
 
 
+def _event_yield(db_path: Path) -> dict[str, Any]:
+    """How many stored rows actually survive into scored factor events.
+
+    Every check above this one is row-level: it asks whether what we stored is
+    well-formed. None of them ask the question that mattered most in practice —
+    whether the *loaders* can read it. Four defects in one session shared this
+    shape:
+
+    * 71,958 13F EXIT rows produced 0 events, because a closed position has
+      ``value = 0`` and ``log1p(0)`` tripped a ``weight <= 0`` guard.
+    * 14,551 House rows produced ~247 events, because the sign parser knew the
+      Senate's English words but not the House's SEC letter codes.
+
+    Both are invisible to row-level checks and glaring here: a source whose
+    yield collapses is a source the pipeline cannot read. This is a *warning*
+    surface, not a pass/fail — a low yield can be legitimate (activism is
+    genuinely sparse), so it reports the ratio and leaves judgement to a human.
+    """
+    from cortex.backtest import (
+        _load_activism_events,
+        _load_congress_events,
+        _load_fund_events,
+        _load_insider_events,
+    )
+    from cortex.storage.db import connect
+
+    loaders = {
+        "congress": ("congress_trades", _load_congress_events),
+        "fund": ("fund_holdings", _load_fund_events),
+        "insider": ("insider_buys", _load_insider_events),
+        "activism": ("activist_stakes", _load_activism_events),
+    }
+
+    out: dict[str, Any] = {}
+    with connect(db_path, read_only=True) as conn:
+        for source, (table, _loader) in loaders.items():
+            try:
+                stored = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+            except Exception:  # noqa: BLE001 - table may not exist yet
+                stored = 0
+            out[f"{source}_rows"] = stored
+
+    for source, (_table, loader) in loaders.items():
+        try:
+            events = loader(db_path)
+        except Exception as exc:  # noqa: BLE001 - report, never abort the audit
+            log.warning("event-yield: %s loader failed: %s", source, exc)
+            out[f"{source}_events"] = "LOADER FAILED"
+            continue
+        stored = out[f"{source}_rows"]
+        out[f"{source}_events"] = len(events)
+        out[f"{source}_yield"] = (
+            f"{len(events) / stored:.1%}" if stored else "n/a (no rows)"
+        )
+
+    return out
+
+
 def run_audit(db_path: Path) -> AuditReport:
     """Run all integrity checks against a read-only connection."""
     from cortex.storage.db import connect
 
     report = AuditReport()
+    report.sections["event_yield"] = _event_yield(db_path)
     with connect(db_path, read_only=True) as conn:
         report.sections["congress_amendment_duplicates"] = (
             _congress_amendment_duplicates(conn)

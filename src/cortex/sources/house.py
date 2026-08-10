@@ -503,6 +503,7 @@ def fetch_house_trades(
     known = known_report_urls or set()
     all_trades: list[HouseTrade] = []
     pdfs_fetched = skipped_empty = parse_failures = skipped_known = 0
+    skipped_scanned = 0
 
     try:
         for year in years:
@@ -545,8 +546,15 @@ def fetch_house_trades(
                     )
                     if trades:
                         all_trades.extend(trades)
-                    else:
+                    elif _pdf_has_text(resp.content):
+                        # Text layer present but nothing parseable — a genuine
+                        # filing with no equity transactions.
                         skipped_empty += 1
+                    else:
+                        # Image-only. Recoverable by OCR, unlike an empty
+                        # filing — worth counting separately so "we skipped it"
+                        # is never confused with "there was nothing there".
+                        skipped_scanned += 1
                 except Exception as exc:  # noqa: BLE001
                     parse_failures += 1
                     log.warning("House: failed %s: %s", pdf_url, exc)
@@ -555,12 +563,19 @@ def fetch_house_trades(
     finally:
         client.close()
 
+    if skipped_scanned:
+        log.warning(
+            "House: %d scanned (image-only) filings skipped — recoverable only "
+            "by re-running with use_ocr=True where LLM calls are enabled",
+            skipped_scanned,
+        )
     log.info(
         "House: %d trades from %d PDFs "
-        "(%d empty/scanned, %d failures, %d already stored)",
+        "(%d empty, %d scanned, %d failures, %d already stored)",
         len(all_trades),
         pdfs_fetched,
         skipped_empty,
+        skipped_scanned,
         parse_failures,
         skipped_known,
     )
