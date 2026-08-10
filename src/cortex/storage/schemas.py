@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import duckdb
 
-SCHEMA_VERSION = 19
+SCHEMA_VERSION = 20
 
 DDL_STATEMENTS = (
     """
@@ -238,6 +238,26 @@ DDL_STATEMENTS = (
     """
     CREATE TABLE IF NOT EXISTS split_coverage (
         ticker     VARCHAR   PRIMARY KEY,
+        fetched_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS short_volume (
+        ticker        VARCHAR   NOT NULL,
+        date          DATE      NOT NULL,
+        short_volume  BIGINT    NOT NULL,
+        total_volume  BIGINT    NOT NULL,
+        fetched_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (ticker, date)
+    )
+    """,
+    """
+    -- Coverage is per SESSION DATE, not per ticker: a day FINRA never
+    -- published and a day we never fetched are otherwise indistinguishable,
+    -- and the difference decides whether a gap in the series is real.
+    CREATE TABLE IF NOT EXISTS short_volume_coverage (
+        date       DATE      PRIMARY KEY,
+        rows       INTEGER   NOT NULL,
         fetched_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
     )
     """,

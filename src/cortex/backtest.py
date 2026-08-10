@@ -200,14 +200,26 @@ def _load_fundamentals(db_path: Path) -> list[_Fundamental]:
     today = date.today()
     splits = load_splits(db_path, [r[0].upper() for r in rows], fetch_missing=False)
     out: list[_Fundamental] = []
+    undated = 0
     for ticker, fd, eps, ni, eq in rows:
+        if fd is None:
+            # Without a filing date the row has no point-in-time position, and
+            # _fundamental_asof would raise comparing None <= as_of.
+            undated += 1
+            continue
         tk = ticker.upper()
         roe = (ni / eq) if (ni is not None and eq not in (None, 0)) else None
-        if eps is not None and fd is not None:
+        if eps is not None:
             factor = split_factor_since(splits.get(tk, []), fd, today)
             if factor != 1.0:
                 eps = eps / factor
         out.append(_Fundamental(tk, fd, eps, roe))
+    if undated:
+        log.warning(
+            "fundamentals: skipped %d rows with no filing_date — they have no "
+            "point-in-time position and cannot be scored",
+            undated,
+        )
     return out
 
 
@@ -240,6 +252,51 @@ def _load_activism_events(db_path: Path) -> list[_Event]:
         for ticker, filing_date in rows
         if filing_date is not None
     ]
+
+
+def _load_short_volume(db_path: Path) -> dict[date, dict[str, float]]:
+    """Reg SHO short-volume share (``sfrac``) per ticker per session.
+
+    Boehmer, Jones & Zhang (2008) find daily short *flow* drives out the
+    fortnightly short-*interest* level, so this is volume share, not open
+    interest.
+    """
+    from cortex.storage.db import connect
+
+    try:
+        with connect(db_path, read_only=True) as conn:
+            rows = conn.execute(
+                """
+                SELECT date, ticker, short_volume, total_volume
+                FROM short_volume
+                WHERE total_volume > 0
+                """
+            ).fetchall()
+    except Exception:  # noqa: BLE001 - pre-v20 DB has no table
+        return {}
+
+    out: dict[date, dict[str, float]] = {}
+    for when, ticker, short_v, total_v in rows:
+        out.setdefault(when, {})[ticker.upper()] = float(short_v) / float(total_v)
+    return out
+
+
+def _short_interest_asof(
+    by_session: dict[date, dict[str, float]], as_of: date, window: int = 5
+) -> dict[str, float]:
+    """Mean sfrac over the last `window` published sessions on or before as_of.
+
+    Five days is the paper's formation window and is fixed, not swept.
+    Point-in-time by construction: sessions after as_of are never consulted.
+    """
+    sessions = sorted(d for d in by_session if d <= as_of)[-window:]
+    if not sessions:
+        return {}
+    acc: dict[str, list[float]] = {}
+    for s in sessions:
+        for ticker, frac in by_session[s].items():
+            acc.setdefault(ticker, []).append(frac)
+    return {t: sum(v) / len(v) for t, v in acc.items()}
 
 
 def _load_executive_events(db_path: Path) -> list[_Event]:
@@ -700,6 +757,7 @@ def run_backtest(
     activism_events = _load_activism_events(db_path)
     insider_events = _load_insider_events(db_path)
     fundamentals = _load_fundamentals(db_path)
+    short_by_session = _load_short_volume(db_path)
     log.info(
         "Loaded %d congress, %d fund, %d activism, %d insider, %d fundamental points",
         len(congress_events),
@@ -727,6 +785,7 @@ def run_backtest(
         "fund",
         "activism",
         "insider",
+        "short",
     )
 
     rets: dict[str, list[float]] = {k: [] for k in variant_keys}
@@ -792,6 +851,14 @@ def run_backtest(
         activ_map = _flow_score(
             activism_events, as_of, _ACTIVISM_HALFLIFE, _ACTIVISM_WINDOW
         )
+        # Short-volume share, negated: a heavily shorted name is predicted to
+        # underperform, and every other factor array is oriented higher-is-better.
+        short = np.full(n_names, np.nan)
+        for t_, frac in _short_interest_asof(short_by_session, as_of).items():
+            idx = col_idx.get(t_)
+            if idx is not None:
+                short[idx] = -frac
+
         cong = np.full(n_names, np.nan)
         fundflow = np.full(n_names, np.nan)
         activ = np.full(n_names, np.nan)  # scored for ablation; not in composite
@@ -836,6 +903,7 @@ def run_backtest(
         zfund = _ze(fundflow)
         zactiv = _ze(activ)
         zinside = _ze(insider)
+        zshort = _ze(short)
 
         # activism excluded from composite: monthly IC ≈ 0 (event timescale is days)
         # insider: evaluated in ablation; included in flow composite if positive
@@ -856,7 +924,7 @@ def run_backtest(
         n_elig = int(eligible.sum())
         for fk, z in zip(
             factor_keys,
-            (zmom, ztrend, zvol, zval, zqual, zcong, zfund, zactiv, zinside),
+            (zmom, ztrend, zvol, zval, zqual, zcong, zfund, zactiv, zinside, zshort),
             strict=True,
         ):
             ic = _spearman_ic(z, fwd)

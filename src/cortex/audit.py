@@ -221,7 +221,8 @@ def _event_yield(db_path: Path) -> dict[str, Any]:
     with connect(db_path, read_only=True) as conn:
         for source, (table, _loader) in loaders.items():
             try:
-                stored = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+                row = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()
+                stored = row[0] if row else 0
             except Exception:  # noqa: BLE001 - table may not exist yet
                 stored = 0
             out[f"{source}_rows"] = stored

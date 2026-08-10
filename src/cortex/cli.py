@@ -217,6 +217,29 @@ def _cmd_house_sync(args: argparse.Namespace) -> None:
         raise SystemExit(1) from exc
 
 
+def _cmd_short_sync(args: argparse.Namespace) -> None:
+    import datetime as _dt
+
+    from cortex.config import load_settings
+    from cortex.sources.short_interest import ShortInterestError, sync_short_volume
+    from cortex.sources.universe import sp500_union
+
+    settings = load_settings()
+    start = _dt.date.fromisoformat(args.start)
+    tickers = sp500_union(start) if not args.all_tickers else None
+    try:
+        n = sync_short_volume(
+            settings.duckdb_path,
+            start=start,
+            tickers=tickers,
+            progress=(lambda m: print(f"  {m}", flush=True)) if args.verbose else None,
+        )
+    except ShortInterestError as exc:
+        print(f"Sync failed: {exc}", file=sys.stderr)
+        raise SystemExit(1) from exc
+    print(f"Short volume: stored {n} rows since {start}")
+
+
 def _cmd_funds_sync(args: argparse.Namespace) -> None:  # noqa: ARG001
     from cortex.config import load_settings
     from cortex.sources.funds import MANAGERS, sync_all_managers
@@ -905,6 +928,21 @@ def main() -> None:
     house_p = sub.add_parser(
         "house-sync", help="Scrape House Clerk PTR filings into the DB"
     )
+    short_p = sub.add_parser(
+        "short-sync", help="Fetch FINRA Reg SHO daily short-volume files"
+    )
+    short_p.add_argument(
+        "--start",
+        default="2017-01-01",
+        metavar="YYYY-MM-DD",
+        help="First session to fetch (default: 2017-01-01)",
+    )
+    short_p.add_argument(
+        "--all-tickers",
+        action="store_true",
+        help="Store every symbol, not just the point-in-time S&P 500 union",
+    )
+    short_p.add_argument("--verbose", action="store_true", help="Per-session progress")
     house_p.add_argument(
         "--since-days",
         type=int,
@@ -1149,6 +1187,7 @@ def main() -> None:
         "vol-screen": _cmd_vol_screen,
         "congress-sync": _cmd_congress_sync,
         "house-sync": _cmd_house_sync,
+        "short-sync": _cmd_short_sync,
         "funds-sync": _cmd_funds_sync,
         "funds-backfill": _cmd_funds_backfill,
         "insiders-sync": _cmd_insiders_sync,
