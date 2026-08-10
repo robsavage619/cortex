@@ -270,24 +270,63 @@ def _load_insider_events(db_path: Path) -> list[_Event]:
 
 
 def _load_fund_events(db_path: Path) -> list[_Event]:
+    """Load 13F position changes as signed flow events.
+
+    ``fund_holdings.period`` already stores the 13F *filing* date, not the
+    quarter-end, so these events are point-in-time as loaded.
+
+    An EXIT closes the position, so its ``value`` is 0 and its magnitude has to
+    come from the prior holding: ``prev_shares`` priced at the last close on or
+    before the filing date. Sizing it off ``value`` drops every EXIT and leaves
+    the factor's negative leg carrying TRIM alone.
+    """
     from cortex.storage.db import connect
 
     with connect(db_path, read_only=True) as conn:
         rows = conn.execute(
             """
-            SELECT ticker, period, action, value
-            FROM fund_holdings
+            SELECT
+                f.ticker,
+                f.period,
+                f.action,
+                CASE
+                    WHEN f.action = 'EXIT' THEN f.prev_shares * (
+                        SELECT p.close
+                        FROM prices p
+                        WHERE p.ticker = f.ticker
+                          AND p.date <= f.period
+                          AND p.date >= f.period - 10
+                        ORDER BY p.date DESC
+                        LIMIT 1
+                    )
+                    ELSE f.value
+                END AS magnitude
+            FROM fund_holdings f
             """
         ).fetchall()
+
     events: list[_Event] = []
-    for ticker, period, action, value in rows:
+    unpriced_exits = 0
+    for ticker, period, action, magnitude in rows:
         if period is None:
             continue
+        if action == "EXIT" and magnitude is None:
+            # No cached price within 10 days — cannot size the closed position.
+            unpriced_exits += 1
+            continue
         sign = 1 if action in ("NEW", "ADD") else -1
-        weight = math.log1p(float(value or 0))
+        weight = math.log1p(float(magnitude or 0))
         if weight <= 0:
             continue
         events.append(_Event(ticker.upper(), period, sign * weight))
+
+    if unpriced_exits:
+        log.warning(
+            "fund events: dropped %d EXIT rows with no cached price within 10 "
+            "days of the filing date; their sell pressure is missing from the "
+            "factor",
+            unpriced_exits,
+        )
     return events
 
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import math
 
 import numpy as np
 import pytest
@@ -87,6 +88,89 @@ def test_load_fundamentals_breaks_filing_date_ties_by_period(tmp_path):
 
     asof = _fundamental_asof(_load_fundamentals(db), dt.date(2026, 8, 10))
     assert asof["WDC"].eps_diluted == 9.9
+
+
+def _fund_db(tmp_path, rows, prices=()):
+    from cortex.storage.db import connect
+    from cortex.storage.schemas import apply_schema
+
+    db = tmp_path / "fund.db"
+    with connect(db) as conn:
+        apply_schema(conn)
+        conn.executemany(
+            "INSERT INTO fund_holdings "
+            "(id, manager, manager_cik, ticker, action, shares, prev_shares, "
+            "value, period) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            rows,
+        )
+        if prices:
+            conn.executemany(
+                "INSERT INTO prices (ticker, date, close) VALUES (?, ?, ?)", prices
+            )
+    return db
+
+
+def test_load_fund_events_sizes_exit_from_prior_position(tmp_path):
+    """An EXIT closes the position, so its `value` is 0.
+
+    Sizing off `value` made log1p(0) == 0 trip the `weight <= 0` guard and
+    dropped every EXIT row in the table — the fund factor's negative leg was
+    carrying TRIM alone. Magnitude has to come from prev_shares × last close.
+    """
+    from cortex.backtest import _load_fund_events
+
+    db = _fund_db(
+        tmp_path,
+        [
+            ("a", "M", "1", "AAPL", "EXIT", 0, 1000, 0, dt.date(2025, 5, 15)),
+            ("b", "M", "1", "MSFT", "ADD", 500, 100, 50_000, dt.date(2025, 5, 15)),
+        ],
+        prices=[("AAPL", dt.date(2025, 5, 13), 200.0)],
+    )
+
+    events = {e.ticker: e.signed_weight for e in _load_fund_events(db)}
+    assert set(events) == {"AAPL", "MSFT"}
+    # 1000 shares * $200 = $200k of sell pressure, signed negative
+    assert events["AAPL"] == pytest.approx(-math.log1p(200_000.0))
+    assert events["MSFT"] > 0
+
+
+def test_load_fund_events_drops_unpriceable_exit_visibly(tmp_path, caplog):
+    """No cached price near the filing date means the EXIT cannot be sized.
+
+    It is dropped — but loudly, because that is missing sell pressure.
+    """
+    import logging
+
+    from cortex.backtest import _load_fund_events
+
+    db = _fund_db(
+        tmp_path,
+        [("a", "M", "1", "DELISTED", "EXIT", 0, 1000, 0, dt.date(2025, 5, 15))],
+        # only a stale price, outside the 10-day lookback
+        prices=[("DELISTED", dt.date(2025, 1, 2), 50.0)],
+    )
+
+    with caplog.at_level(logging.WARNING):
+        assert _load_fund_events(db) == []
+    assert "dropped 1 EXIT" in caplog.text
+
+
+def test_load_fund_events_treats_period_as_filing_date(tmp_path):
+    """`period` stores the 13F filing date, not the quarter-end.
+
+    A price on the filing date is in-window; the quarter-end 45 days earlier is
+    not what the event is dated by.
+    """
+    from cortex.backtest import _load_fund_events
+
+    db = _fund_db(
+        tmp_path,
+        [("a", "M", "1", "AAPL", "EXIT", 0, 10, 0, dt.date(2025, 5, 15))],
+        prices=[("AAPL", dt.date(2025, 3, 31), 100.0)],
+    )
+    # the quarter-end price is >10 days before the filing date, so no sizing
+    assert _load_fund_events(db) == []
 
 
 def test_split_factor_since_only_counts_events_in_window():

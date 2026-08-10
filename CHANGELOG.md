@@ -6,6 +6,48 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Every 13F EXIT was being dropped from the fund factor (2026-08-10)
+
+`_load_fund_events` sized every event off `fund_holdings.value`. An EXIT closes
+the position, so its `value` is 0 — `log1p(0) == 0` tripped the loader's
+`if weight <= 0: continue` guard and **all 71,958 EXIT rows were discarded**.
+The fund factor's negative leg had been carrying TRIM alone.
+
+| action | total | dropped |
+|---|---:|---:|
+| **EXIT** | **71,958** | **71,958 (100%)** |
+| NEW | 76,602 | 20 |
+| ADD | 153,226 | 0 |
+| TRIM | 131,136 | 27 |
+
+`prev_shares` is populated on 71,898 of the 71,958, so the magnitude was
+recoverable: an EXIT is now sized as `prev_shares × last close on or before the
+filing date` (10-day lookback) from the local `prices` cache, keeping backtests
+network-free. Restricted to what the backtest actually scores — S&P 500 union,
+2017+ — this restores 7,309 of 8,100 in-universe EXITs (90.2%) against 34,923
+surviving non-EXIT events, roughly **21% more event flow, all on the sell side**.
+EXITs with no cached price are still dropped but now log a count instead of
+vanishing.
+
+Re-baselined (same DB, same parameters, loader the only change — congress 2.24
+and value 0.13 are unchanged to the decimal, which pins the deltas to this fix):
+
+| metric (NW t) | before | after |
+|---|---:|---:|
+| fund | 2.48 | **2.42** |
+| composite | 1.78 | **1.65** |
+| L/S spread (gross) | 1.39 | **1.23** |
+| L/S spread (net) | 0.96 | **0.78** |
+
+Restoring genuinely missing information lowered the measured edge — the same
+direction as the value/split-basis fix, and the third time a CORTEX defect has
+turned out to live in what the pipeline threw away rather than in the scorer.
+
+Also confirmed while in here: `fund_holdings.period` stores the 13F **filing
+date**, not the quarter-end (only 10 of 432,922 rows fall on a quarter-end; the
+modes are the mid-Feb/May/Aug/Nov statutory deadlines). There is no 45-day
+lookahead. The column name is misleading and should be renamed.
+
 ### Vault retrieval actually reaches the vault (2026-08-10)
 
 The research retriever had been serving a stale, diluted index that no shipped

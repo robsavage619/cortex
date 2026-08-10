@@ -40,12 +40,14 @@ Single user (Rob). Not a product. Optimise for research iteration speed.
 - Default `from_year=2017` everywhere. Do not change without backtesting first.
 
 ### Pre-registration threshold: t ≥ 3.0 (Bonferroni-corrected)
-- Congress factor NW t=2.24, fund t=2.48, CORTEX composite t=1.78 as of last backtest (2026-08-10, value-factor integrity fixes)
+- Congress factor NW t=2.24, fund t=2.42, CORTEX composite t=1.65 as of last backtest (2026-08-10, after the fund EXIT fix)
 - None clear the bar yet — no live trading until at least one factor does
 - **Journal 2026-07-06 (post-remediation):** old → new: congress 2.40→2.59 (+0.19, amendment exclusion removed ~1,978 double-counted rows), fund 2.58→2.29 (-0.29, EXIT preservation changed the event set), composite 1.89→2.40 (+0.51, brain alignment fixed: discovery now computes the same 3-block equal-weight signal as the backtest). Long-short spread NW t=2.98 (was not tracked). No factor clears t≥3.0.
 - **Journal 2026-07-16 (methodology hardening, same data vintage):** old → new: congress 2.59→2.36, fund 2.29→2.64, composite 2.40→2.32, L/S 2.98→2.55 gross / 2.08 net. Drivers: point-in-time S&P 500 universe (742-name union vs 503 current members; monthly priced-member coverage mean 91%, worst 81% — residual delisting bias measured, not hidden), L/S costed (10bps long / 25bps short per side), OOS verdict re-keyed to NW t (OOS NW t=2.33 → "interesting, unconfirmed"). The t≥3.0 bar did not move. Event-study CARs (now market-model, overlap-collapsed) are flat-to-negative for congress at long horizons — the monthly IC framing carries the signal, not event CARs.
 
 - **Journal 2026-08-10 (value-factor data integrity, schema v19):** old → new: congress 2.36→2.24, fund 2.64→2.48, composite 2.32→**1.78**, L/S 2.55→1.39 gross / 2.08→0.96 net. The composite fell because two defects had been feeding the fundamental block spurious signal: (a) `_load_fundamentals` ordered only by `filing_date`, so a 10-K's comparative periods tied and last-wins kept an arbitrary row (WDC priced off a 2023 quarter, SNDK left with NULL EPS); (b) as-reported EDGAR EPS was divided by back-adjusted prices, inflating earnings yield by the cumulative split factor (BKNG implied P/E 1.3 on a 25:1 split, KLAC 6.4 on 10:1). Standalone value is now NW t=**0.13** — the value leg carries nothing. Part of the delta is confounded with same-day congress/house refresh. **A fix that lowers a t-stat is the credible kind** (Grinold's sensibleness guard). No factor clears t≥3.0.
+
+- **Journal 2026-08-10b (fund EXIT restoration):** old → new: fund 2.48→2.42, composite 1.78→**1.65**, L/S 1.39→1.23 gross / 0.96→0.78 net. Congress (2.24) and value (0.13) unchanged to the decimal, which pins the deltas to this fix alone. `_load_fund_events` sized every event off `value`; an EXIT closes the position so `value` is 0, `log1p(0)=0` tripped the `weight <= 0` guard, and **all 71,958 EXIT rows were dropped** — the negative leg was TRIM only. Now sized as `prev_shares × last close ≤ filing_date` (10-day lookback) from the local price cache; restores 7,309 of 8,100 in-universe EXITs, ~21% more event flow, all sell-side. Full re-measure this run: congress 2.24, fund 2.42, quality 1.10, trend 0.71, mom 0.38, value 0.13, insider -0.35, vol -0.47, activism -1.71. Third defect in a row that lived in what the pipeline discarded rather than in the scorer.
 
 ### Price data (post-2026-07-16)
 - All research prices go through `cortex.sources.prices` (DuckDB `prices` + `price_coverage`, schema v18) — never call `yf.download` directly in research code
@@ -75,3 +77,15 @@ Single user (Rob). Not a product. Optimise for research iteration speed.
 - YAML frontmatter is stripped before embedding and each chunk is prefixed with the note title, so a mid-note chunk still identifies its source
 - `retrieve()` returns at most one chunk per note; fewer than `k` results means fewer than `k` distinct notes were relevant
 - After ingesting anything into the vault, run `uv run cortex rag-index` — it exits non-zero if it matches no notes
+
+## 13F / fund factor semantics
+- `fund_holdings.period` is the 13F **filing date**, NOT the quarter-end — only 10 of 432,922 rows fall on a quarter-end; the modes are the mid-Feb/May/Aug/Nov statutory deadlines. There is no 45-day lookahead. The column name is wrong and should be renamed `filing_date`
+- An EXIT row has `value = 0` and `shares = 0` by construction; its magnitude lives in `prev_shares`. Never size a fund event off `value` alone
+- The table holds quarter-over-quarter **diffs for 14 curated managers**, not full portfolios — there are no HOLD rows. Cohen/Polk/Silli conviction weighting (position weight vs a passive benchmark) is therefore NOT computable from it
+- Buys and sells are not mirror images: Agarwal 2013 finds 13F acquisitions +7.06% DGTW at 12m (t=3.95) vs disposals +2.94% (t=1.42); CORTEX signs them symmetrically ±1, which is unsupported and now testable
+
+## Factor literature (vault, 16 papers as of 2026-08-10)
+- The promotion bar traces to Harvey/Liu/Zhu 2016. Note both Harvey papers recommend **BHY (false discovery rate)**, while CORTEX's docs say "Bonferroni-corrected" — the label and the arithmetic disagree
+- Newey & West 1987 does **not** specify lag selection; the `4(T/100)^(2/9)` plug-in rule is from later literature. At T=114 it gives lag 4, which is at the edge of the paper's own `m(T)/T^(1/4) → 0` growth condition
+- The insider factor's -0.35 is likely a **universe mismatch**: Lakonishok & Lee find the effect is entirely small-cap (large-cap NPR coefficient -0.30, t=-0.65) and CORTEX's universe is the S&P 500
+- Before building PEAD: Bernard & Thomas report SUE-return correlation 1.00 at decile level but **0.09 at firm level**. CORTEX's monthly cross-sectional IC is structurally the firm-level statistic, so expect IC ≈ 0.05-0.10, not the decile spread
