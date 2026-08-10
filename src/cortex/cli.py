@@ -535,8 +535,14 @@ def _cmd_backtest(args: argparse.Namespace) -> None:
     )
     print("  by dollar volume — the literature says these effects are small-cap.")
     print(
+        "  topD/botD = mean monthly excess return of each tail vs its own "
+        "cross-section;"
+    )
+    print("  an IC cannot say which end of a factor carries it.")
+    print(
         f"   {'factor':10} {'mean IC':>9}  {'t':>6}  {'NW t':>6}  "
-        f"{'bar':>5}  {'cover':>6}  {'+mo':>5}  {'lgNWt':>6}  {'smNWt':>6}"
+        f"{'bar':>5}  {'cover':>6}  {'+mo':>5}  {'lgNWt':>6}  {'smNWt':>6}  "
+        f"{'topD':>7}  {'botD':>7}"
     )
     for f in rep.factor_ics:
         bar = _gate.threshold_for(f.factor)
@@ -545,7 +551,8 @@ def _cmd_backtest(args: argparse.Namespace) -> None:
             f"   {f.factor:10} {f.mean_ic:>+9.4f}  {f.ic_tstat:>6.2f}  "
             f"{f.ic_tstat_nw:>6.2f}  {bar:>5.2f}  {f.coverage:>5.0%}  "
             f"{f.pct_months_positive:>5.0%}  {f.ic_tstat_nw_large:>6.2f}  "
-            f"{f.ic_tstat_nw_small:>6.2f}{flag}"
+            f"{f.ic_tstat_nw_small:>6.2f}  {f.top_decile_excess:>+7.2%}  "
+            f"{f.bottom_decile_excess:>+7.2%}{flag}"
         )
     print()
     if rep.long_short is not None:
@@ -644,8 +651,9 @@ def _cmd_backtest(args: argparse.Namespace) -> None:
             mean_abs_rho=rho,
         )
         print(
-            f"    Cumulative trials logged: {cumulative} "
-            "(input to the Harvey-Liu Sharpe haircut)"
+            f"    Trials logged since 2026-08-10: {cumulative} — a LOWER BOUND. "
+            "Runs before instrumentation are unrecorded, so the true N that "
+            "belongs in a Harvey-Liu haircut is higher."
         )
     except Exception as exc:  # noqa: BLE001 - never fail a report on bookkeeping
         print(f"    Trial log unavailable: {exc}", file=sys.stderr)

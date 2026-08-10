@@ -522,6 +522,10 @@ class FactorIC:
     """NW t within the larger half of the cross-section by dollar volume."""
     ic_tstat_nw_small: float = 0.0
     """NW t within the smaller half — where the literature says the effects live."""
+    top_decile_excess: float = 0.0
+    """Mean monthly excess return of the factor's top decile vs its cross-section."""
+    bottom_decile_excess: float = 0.0
+    """Same for the bottom decile — reveals which tail actually carries a factor."""
     pct_months_positive: float = 0.0
     """Share of scored months with a positive IC.
 
@@ -687,6 +691,33 @@ def _top_decile_return(
     return net, turn, top
 
 
+def _factor_tails(
+    z: np.ndarray, fwd: np.ndarray, decile: float = 0.10
+) -> tuple[float, float, float] | None:
+    """Excess forward return of a factor's top and bottom decile.
+
+    An IC is a rank correlation across the whole cross-section, so it cannot
+    say *which end* carries a factor. That distinction is load-bearing for the
+    short signal: Boehmer, Jones & Zhang report quintile alphas of
+    +1.16 / +0.28 / -0.29 / -0.25 / 0.00, meaning essentially the entire spread
+    is the *lightly* shorted quintile outperforming rather than the heavily
+    shorted underperforming. A rank IC understates a signal living in one tail,
+    which is why the pre-registration recorded that IC alone cannot falsify it.
+
+    Returns (top_excess, bottom_excess, mean) in the same units as `fwd`, each
+    tail measured against the cross-sectional mean of that month.
+    """
+    valid = np.where(~np.isnan(z) & np.isfinite(fwd))[0]
+    if len(valid) < 20:
+        return None
+    order = valid[np.argsort(z[valid])[::-1]]
+    n = max(1, int(len(order) * decile))
+    mean = float(np.mean(fwd[valid]))
+    top = float(np.mean(fwd[order[:n]])) - mean
+    bottom = float(np.mean(fwd[order[-n:]])) - mean
+    return top, bottom, mean
+
+
 def _build_signals(
     zmom: np.ndarray,
     ztrend: np.ndarray,
@@ -814,6 +845,8 @@ def run_backtest(
     # cross-section at its own median dollar volume and measure both halves.
     fac_ic_large: dict[str, list[float]] = {k: [] for k in factor_keys}
     fac_ic_small: dict[str, list[float]] = {k: [] for k in factor_keys}
+    fac_top: dict[str, list[float]] = {k: [] for k in factor_keys}
+    fac_bot: dict[str, list[float]] = {k: [] for k in factor_keys}
     bench_rets: list[float] = []
     spy_rets: list[float] = []
     decile_acc: list[list[float]] = [[] for _ in range(10)]
@@ -965,6 +998,10 @@ def run_backtest(
                 fac_ic[fk].append(ic)
             fac_ic_series[fk].append(ic if ic is not None else math.nan)
             fac_cov[fk].append(float(np.sum(~np.isnan(z)) / max(n_elig, 1)))
+            tails = _factor_tails(z, fwd)
+            if tails is not None:
+                fac_top[fk].append(tails[0])
+                fac_bot[fk].append(tails[1])
             for mask, acc in ((large_mask, fac_ic_large), (small_mask, fac_ic_small)):
                 if not mask.any():
                     continue
@@ -1045,8 +1082,12 @@ def run_backtest(
         pct_pos = sum(1 for v in series if v > 0) / len(series) if series else 0.0
         _, _, t_large = _series_stats(fac_ic_large[fk])
         _, _, t_small = _series_stats(fac_ic_small[fk])
+        top_x = float(np.mean(fac_top[fk])) if fac_top[fk] else 0.0
+        bot_x = float(np.mean(fac_bot[fk])) if fac_bot[fk] else 0.0
         factor_ics.append(
-            FactorIC(fk, ic_m, ic_t, ic_t_nw, cov, t_large, t_small, pct_pos)
+            FactorIC(
+                fk, ic_m, ic_t, ic_t_nw, cov, t_large, t_small, top_x, bot_x, pct_pos
+            )
         )
 
     # Long-short spread: CORTEX top decile (D10) minus bottom decile (D1),

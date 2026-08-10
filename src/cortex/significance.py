@@ -161,6 +161,12 @@ def record_trial(
     Cumulative, not per-run: thirteen configurations inside one backtest is one
     research decision; forty backtests over a month is forty chances to have
     found something by luck, and only the second number belongs in a haircut.
+
+    **The returned total is a LOWER BOUND, not the true trial count.** Logging
+    began on 2026-08-10; every backtest run before that — months of them — is
+    unrecorded and unrecoverable. Reporting the logged number as though it were
+    N would understate the haircut, which is the precise failure this function
+    exists to prevent, so callers must present it as a floor.
     """
     from cortex.storage.db import connect
     from cortex.storage.schemas import apply_schema
