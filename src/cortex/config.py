@@ -11,7 +11,11 @@ _PROJECT_ROOT = Path(__file__).parent.parent.parent
 DATA_DIR = _PROJECT_ROOT / "data"
 
 DEFAULT_DUCKDB_PATH = DATA_DIR / "duckdb" / "cortex.db"
+# vault_dir is where CORTEX *writes* its mirror; research_dir is where it *reads*
+# notes to embed. They are different trees — the research corpus lives in the
+# vault's wiki, not under the mirror.
 DEFAULT_VAULT_DIR = Path.home() / "Vault" / "savage_vault" / "investing"
+DEFAULT_RESEARCH_DIR = Path.home() / "Vault" / "savage_vault" / "wiki"
 
 # SEC EDGAR requires a "Sample Company name AdminContact@example.com"-style
 # User-Agent on every request. Set CORTEX_SEC_USER_AGENT to your own real contact
@@ -108,7 +112,7 @@ def load_settings(
     if raw_research:
         resolved_research = Path(raw_research)
     else:
-        resolved_research = research_dir or (resolved_vault / "research")
+        resolved_research = research_dir or DEFAULT_RESEARCH_DIR
 
     return Settings(
         duckdb_path=resolved_db,

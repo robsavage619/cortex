@@ -67,3 +67,11 @@ Single user (Rob). Not a product. Optimise for research iteration speed.
 - `fundamentals` — several comparative periods share one `filing_date` (a 10-K's prior years); any as-of query MUST order by `(filing_date, period_end)` or the tie-break is arbitrary storage order
 - `splits` / `split_coverage` (schema v19) — coverage is tracked per ticker because "no splits ever" and "never fetched" are otherwise indistinguishable; `_load_fundamentals` reads the cache only, never the network, so backtests stay reproducible
 - All sync commands are idempotent via `ON CONFLICT (id) DO NOTHING`
+
+## Vault RAG (post-2026-08-10)
+- Two separate trees: `settings.vault_dir` (`savage_vault/investing/`) is where CORTEX **writes** its mirror; `settings.research_dir` (`savage_vault/wiki/`) is where it **reads** notes to embed. They are not the same directory and never were — the old default pointed research at `investing/research`, which has never existed, so `rag-index` was a silent no-op for months while the retriever served a 2026-05-23 index
+- `index_vault` filters on `rag.RESEARCH_TAGS` against each note's frontmatter `tags`/`domains`. The vault is a general knowledge base; without the filter the finance corpus (~39 notes) is buried under exercise science and sabermetrics. **A new finance note must be tagged `quantitative-finance` (or another allowlist tag) or the retriever will never see it**
+- Re-indexing deletes every chunk under the indexed tree, not just the notes it kept — renamed, deleted, and newly-excluded notes must not survive as orphans that retrieval can still return
+- YAML frontmatter is stripped before embedding and each chunk is prefixed with the note title, so a mid-note chunk still identifies its source
+- `retrieve()` returns at most one chunk per note; fewer than `k` results means fewer than `k` distinct notes were relevant
+- After ingesting anything into the vault, run `uv run cortex rag-index` — it exits non-zero if it matches no notes

@@ -6,6 +6,36 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Vault retrieval actually reaches the vault (2026-08-10)
+
+The research retriever had been serving a stale, diluted index that no shipped
+command could refresh. Three independent faults:
+
+- **`rag-index` was a silent no-op.** `settings.research_dir` defaulted to
+  `vault_dir / "research"` — `~/Vault/savage_vault/investing/research`, a
+  directory that has never existed. `index_vault` logged a warning, returned 0,
+  and the CLI printed "Indexed 0 chunks", which reads like success. Meanwhile
+  the live index was a 2026-05-23 snapshot of 529 notes built by some one-off
+  override. New `DEFAULT_RESEARCH_DIR` points at `savage_vault/wiki/`, and the
+  command now exits non-zero when it matches no notes.
+- **The corpus was the whole knowledge base.** All 1,278 wiki notes were
+  eligible, so exercise science, sabermetrics and frontend notes crowded the
+  finance corpus at query time — a query about the CORTEX composite returned
+  HRV standards and a McElreath covariance chapter. `index_vault` now parses
+  YAML frontmatter and keeps only notes whose `tags`/`domains` intersect
+  `rag.RESEARCH_TAGS`. 39 notes, 109 chunks. The same queries now return
+  `cortex-signal-register` and `cortex-research-promotion-policy`.
+- **Chunk text was half punctuation.** The YAML block was embedded verbatim
+  into each note's first chunk, and later chunks carried no indication of which
+  paper they came from. Frontmatter is now stripped, `title` and `summary` are
+  lifted into the body, and every chunk is prefixed with the note title.
+
+Also: `tier` is populated from the vault's own `retrieval_priority` instead of
+a path regex that never matched (all 1,783 old rows had `tier IS NULL`);
+re-indexing clears the whole tree so renamed/deleted/newly-excluded notes cannot
+survive as orphan chunks; and `retrieve()` returns at most one chunk per note,
+so a `k=2` factor panel no longer spends both slots on the same paper.
+
 ### Value-factor data integrity (2026-08-10, schema v19)
 
 Two independent defects were corrupting the fundamental block. Both are fixed;

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import sys
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -103,10 +104,24 @@ def _cmd_mirror(args: argparse.Namespace) -> None:  # noqa: ARG001
 
 def _cmd_rag_index(args: argparse.Namespace) -> None:  # noqa: ARG001
     from cortex.config import load_settings
-    from cortex.rag import index_vault
+    from cortex.rag import RESEARCH_TAGS, index_vault
 
     settings = load_settings()
-    n = index_vault(settings.research_dir, db_path=settings.duckdb_path)
+    n = index_vault(
+        settings.research_dir,
+        db_path=settings.duckdb_path,
+        include_tags=RESEARCH_TAGS,
+    )
+    if n == 0:
+        # A silent zero here used to read like success while the retriever kept
+        # serving a stale index. Make a misconfigured research dir stop the run.
+        print(
+            f"Indexed 0 chunks from {settings.research_dir} — no notes tagged "
+            f"{sorted(RESEARCH_TAGS)}. Check the directory exists and that its "
+            "notes carry frontmatter tags; set CORTEX_RESEARCH_DIR to override.",
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
     print(f"Indexed {n} chunks from {settings.research_dir}")
 
 
