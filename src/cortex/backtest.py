@@ -405,6 +405,15 @@ class FactorIC:
     ic_tstat: float  # naive IID t-stat
     ic_tstat_nw: float  # Newey-West HAC t-stat
     coverage: float  # avg fraction of universe with the factor present
+    pct_months_positive: float = 0.0
+    """Share of scored months with a positive IC.
+
+    MacKinlay (1997) asks for the percent-positive alongside the mean, and Katz
+    et al. (2018) note it is almost never reported — a mean IC says nothing
+    about whether an effect is broad or a handful of outlier months carrying an
+    otherwise-flat series. Near 50% means the sign is a coin flip regardless of
+    what the mean looks like.
+    """
 
 
 @dataclass
@@ -867,7 +876,9 @@ def run_backtest(
     for fk in factor_keys:
         ic_m, ic_t, ic_t_nw = _series_stats(fac_ic[fk])
         cov = float(np.mean(fac_cov[fk])) if fac_cov[fk] else 0.0
-        factor_ics.append(FactorIC(fk, ic_m, ic_t, ic_t_nw, cov))
+        series = fac_ic[fk]
+        pct_pos = sum(1 for v in series if v > 0) / len(series) if series else 0.0
+        factor_ics.append(FactorIC(fk, ic_m, ic_t, ic_t_nw, cov, pct_pos))
 
     # Long-short spread: CORTEX top decile (D10) minus bottom decile (D1),
     # aligned month-by-month (both deciles are appended under the same gate).

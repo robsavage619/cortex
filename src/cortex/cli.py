@@ -502,13 +502,21 @@ def _cmd_backtest(args: argparse.Namespace) -> None:
             f"maxDD={s.max_drawdown:.1%}  hit={s.hit_rate:.0%}  n={s.n_months}"
         )
     print()
+    from cortex.significance import build_gate as _build_gate
+
+    _gate = _build_gate(len(rep.factor_ics) + len(rep.variants))
     print("  PER-FACTOR ABLATION (standalone information coefficient):")
-    print(f"   {'factor':10} {'mean IC':>9}  {'t':>6}  {'NW t':>6}  {'coverage':>8}")
+    print(
+        f"   {'factor':10} {'mean IC':>9}  {'t':>6}  {'NW t':>6}  "
+        f"{'bar':>5}  {'cover':>6}  {'+mo':>5}"
+    )
     for f in rep.factor_ics:
-        flag = "  <-- real" if abs(f.ic_tstat_nw) >= 3.0 else ""
+        bar = _gate.threshold_for(f.factor)
+        flag = "  <-- real" if abs(f.ic_tstat_nw) >= bar else ""
         print(
             f"   {f.factor:10} {f.mean_ic:>+9.4f}  {f.ic_tstat:>6.2f}  "
-            f"{f.ic_tstat_nw:>6.2f}  {f.coverage:>7.0%}{flag}"
+            f"{f.ic_tstat_nw:>6.2f}  {bar:>5.2f}  {f.coverage:>5.0%}  "
+            f"{f.pct_months_positive:>5.0%}{flag}"
         )
     print()
     if rep.long_short is not None:
@@ -535,26 +543,60 @@ def _cmd_backtest(args: argparse.Namespace) -> None:
                 f"{v:>+7.2f}" if v is not None else f"{'—':>7}" for v in row
             )
             print(f"   {name:6}{cells}")
+        # Mean |off-diagonal| correlation. The Sharpe-haircut procedure in
+        # Harvey & Liu (2015) takes rho as an input; without it the haircut
+        # cannot be computed at all, so record it every run.
+        offdiag = [
+            abs(v)
+            for i, row in enumerate(fc.matrix)
+            for j, v in enumerate(row)
+            if i != j and v is not None
+        ]
+        if offdiag:
+            print(
+                f"   mean |rho| off-diagonal = {sum(offdiag) / len(offdiag):.3f}  "
+                "(input to the Harvey-Liu Sharpe haircut)"
+            )
         print()
     cortex = rep.variants[0]
     print("  CORTEX decile CAGR (D1 worst → D10 best), monotonicity check:")
     deciles = "  ".join(f"D{d + 1}:{c:+.0%}" for d, c in enumerate(cortex.decile_cagr))
     print("   " + deciles)
     print()
+    from cortex.significance import bhy, build_gate
+
+    n_tests = len(rep.factor_ics) + len(rep.variants)
+    gate = build_gate(n_tests)
+    tstats = {f.factor: f.ic_tstat_nw for f in rep.factor_ics}
+    sweep = bhy(tstats)
+
+    print("  PRE-REGISTRATION GATE (BHY false-discovery rate, derived per run):")
+    print(
+        f"    {n_tests} tests this run → own-family bar t={gate.own_family_bhy_t:.2f} "
+        f"(Bonferroni {gate.own_family_bonferroni_t:.2f})"
+    )
+    print(
+        f"    zoo-draw bar t={gate.zoo_bhy_t:.2f} "
+        f"(Bonferroni {gate.zoo_bonferroni_t:.2f}, HLZ N={316})"
+    )
     gate_parts = []
     for f in rep.factor_ics:
         if f.factor in ("congress", "fund"):
-            verdict = "PASS" if abs(f.ic_tstat_nw) >= 3.0 else "FAIL"
-            gate_parts.append(f"{f.factor} {f.ic_tstat_nw:.2f} {verdict}")
+            v = gate.verdict(f.factor, f.ic_tstat_nw)
+            gate_parts.append(f"{f.factor} {f.ic_tstat_nw:.2f} {v}")
     comp = rep.variants[0]
-    comp_verdict = "PASS" if abs(comp.ic_tstat_nw) >= 3.0 else "FAIL"
+    comp_verdict = gate.verdict("composite", comp.ic_tstat_nw)
     gate_parts.append(f"composite {comp.ic_tstat_nw:.2f} {comp_verdict}")
-    print(f"  PRE-REGISTRATION GATE (NW t >= 3.0): {' | '.join(gate_parts)}")
+    print(f"    {' | '.join(gate_parts)}")
+    survivors = ", ".join(sorted(sweep.passed)) if sweep.passed else "none"
+    print(f"    BHY sweep over all {len(tstats)} factors — discoveries: {survivors}")
     print()
-    print(
-        "  READ: a factor/composite is 'real' only at NW (Newey-West) IC t-stat ≥ 3.0"
-    )
-    print("  (autocorrelation-robust, multiple-testing haircut). The long-short spread")
+    print("  READ: the bar is recomputed from this run's test count, not hardcoded.")
+    print("  Zoo draws (momentum/trend/vol/value/quality) inherit the published")
+    print("  literature's multiple-testing burden; CORTEX's own alt-data signals are")
+    print("  scored against its own family. Assignment is fixed in significance.py")
+    print("  ahead of the run, never chosen after seeing a result.")
+    print("  The long-short spread")
     print(
         "  should be positive and deciles rise monotonically; a flow factor earns its"
     )
