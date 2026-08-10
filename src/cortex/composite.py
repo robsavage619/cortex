@@ -47,6 +47,15 @@ INSIDER_WINDOW = 180
 ACTIVISM_HALFLIFE = 365.0
 ACTIVISM_WINDOW = 730
 
+# 13F buys and sells are not mirror images. Agarwal et al. (2013) put
+# acquisitions at +7.06% DGTW over 12 months (t=3.95) against disposals at
+# +2.94% (t=1.42); Lakonishok & Lee (2001) find the same asymmetry for
+# corporate insiders, where sells carry nothing at all. CORTEX signed them
+# +/-1 until this was pre-registered and tested on 2026-08-10.
+# Pre-registered at fixed values and NOT swept — a swept constant is a fitted
+# parameter, and the honest test count would then be the number of values tried.
+FUND_SELL_WEIGHT = 0.5
+
 Z_CLIP = 3.0
 
 

@@ -128,11 +128,33 @@ def test_load_fund_events_sizes_exit_from_prior_position(tmp_path):
         prices=[("AAPL", dt.date(2025, 5, 13), 200.0)],
     )
 
+    from cortex.composite import FUND_SELL_WEIGHT
+
     events = {e.ticker: e.signed_weight for e in _load_fund_events(db)}
     assert set(events) == {"AAPL", "MSFT"}
-    # 1000 shares * $200 = $200k of sell pressure, signed negative
-    assert events["AAPL"] == pytest.approx(-math.log1p(200_000.0))
+    # 1000 shares * $200 = $200k of sell pressure, signed negative and damped
+    # by the pre-registered sell weight (Agarwal 2013: sells carry less
+    # information than buys, so they are not mirror images).
+    assert events["AAPL"] == pytest.approx(-FUND_SELL_WEIGHT * math.log1p(200_000.0))
     assert events["MSFT"] > 0
+
+
+def test_fund_sells_are_damped_relative_to_buys(tmp_path):
+    """Buys and sells are not mirror images — the sell weight must bite."""
+    from cortex.backtest import _load_fund_events
+    from cortex.composite import FUND_SELL_WEIGHT
+
+    assert 0.0 <= FUND_SELL_WEIGHT <= 1.0
+    db = _fund_db(
+        tmp_path,
+        [
+            ("a", "M", "1", "AAPL", "ADD", 500, 100, 100_000, dt.date(2025, 5, 15)),
+            ("b", "M", "1", "MSFT", "TRIM", 100, 500, 100_000, dt.date(2025, 5, 15)),
+        ],
+    )
+    ev = {e.ticker: e.signed_weight for e in _load_fund_events(db)}
+    # same notional on both sides, so the ratio is exactly the sell weight
+    assert abs(ev["MSFT"]) == pytest.approx(FUND_SELL_WEIGHT * ev["AAPL"])
 
 
 def test_load_fund_events_drops_unpriceable_exit_visibly(tmp_path, caplog):

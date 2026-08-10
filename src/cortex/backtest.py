@@ -55,6 +55,10 @@ from cortex.composite import (
     FUND_HALFLIFE as _FUND_HALFLIFE,
 )
 from cortex.composite import (
+    FUND_SELL_WEIGHT,
+    build_blocks,
+)
+from cortex.composite import (
     FUND_WINDOW as _FUND_WINDOW,
 )
 from cortex.composite import (
@@ -65,9 +69,6 @@ from cortex.composite import (
 )
 from cortex.composite import (
     Z_CLIP as _Z_CLIP,
-)
-from cortex.composite import (
-    build_blocks,
 )
 
 log = logging.getLogger(__name__)
@@ -245,24 +246,58 @@ def _load_executive_events(db_path: Path) -> list[_Event]:
 
 
 def _load_insider_events(db_path: Path) -> list[_Event]:
-    """Load Form 4 open-market purchase events (point-in-time via filing_date)."""
+    """Load Form 4 open-market purchase events (point-in-time via filing_date).
+
+    Two departures from a plain dollar-weighted sum, both from Lakonishok & Lee
+    (2001), whose strongest screen is built on distinct-insider count rather
+    than volume:
+
+    * **Distinct filers matter more than repeat trades.** Three officers buying
+      is a stronger signal than one officer buying three times, so each event
+      is scaled by the count of distinct filers on that issuer in the month.
+    * **Dollars are ranked, not logged.** A raw ``log1p(value_usd)`` weight
+      mechanically favours mega-caps — a $2M buy is a rounding error at a $3T
+      company and a statement at a $5B one, and the log scale scores them
+      almost identically. LL use dollars only as a size-relative rank, so the
+      weight is the trade's percentile within its own month.
+    """
     from cortex.storage.db import connect
 
     try:
         with connect(db_path, read_only=True) as conn:
             rows = conn.execute(
                 """
-                SELECT ticker, filing_date, value_usd
-                FROM insider_buys
+                WITH scored AS (
+                    SELECT
+                        ticker,
+                        filing_date,
+                        value_usd,
+                        date_trunc('month', filing_date) AS mo,
+                        COUNT(DISTINCT filer_cik) OVER (
+                            PARTITION BY issuer_cik, date_trunc('month', filing_date)
+                        ) AS distinct_filers
+                    FROM insider_buys
+                    WHERE filing_date IS NOT NULL
+                      AND value_usd > 0
+                )
+                SELECT
+                    ticker,
+                    filing_date,
+                    distinct_filers,
+                    PERCENT_RANK() OVER (PARTITION BY mo ORDER BY value_usd)
+                        AS size_rank
+                FROM scored
                 """
             ).fetchall()
     except Exception:  # noqa: BLE001 - table may not exist yet
         return []
+
     events: list[_Event] = []
-    for ticker, filing_date, value_usd in rows:
-        if filing_date is None:
-            continue
-        weight = math.log1p(float(value_usd or 0))
+    for ticker, filing_date, distinct_filers, size_rank in rows:
+        # percent_rank is 0 for the smallest trade in a month; floor it so a
+        # genuine buy never contributes exactly nothing.
+        rank = max(float(size_rank or 0.0), 0.01)
+        weight = rank * math.log1p(float(distinct_filers or 1))
         if weight <= 0:
             continue
         events.append(_Event(ticker.upper(), filing_date, weight))
@@ -314,7 +349,8 @@ def _load_fund_events(db_path: Path) -> list[_Event]:
             # No cached price within 10 days — cannot size the closed position.
             unpriced_exits += 1
             continue
-        sign = 1 if action in ("NEW", "ADD") else -1
+        buy = action in ("NEW", "ADD")
+        sign = 1.0 if buy else -FUND_SELL_WEIGHT
         weight = math.log1p(float(magnitude or 0))
         if weight <= 0:
             continue
