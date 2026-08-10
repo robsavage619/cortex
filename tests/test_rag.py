@@ -158,6 +158,7 @@ type: source-summary
 title: "The Gross Profitability Premium"
 summary: "Novy-Marx (2013). Gross profitability predicts the cross-section."
 tags: [quantitative-finance, factor-investing, quality]
+aliases: ["Novy-Marx 2013", "the quality factor paper"]
 retrieval_priority: critical
 ---
 
@@ -186,6 +187,8 @@ def test_parse_note_extracts_tags_and_tier(tmp_path):
     assert "Gross Profitability Premium" in body
     assert "Novy-Marx (2013)" in body
     assert "profitable firms" in body
+    # aliases are embedded too — they are the phrasings a query is likely to use
+    assert "the quality factor paper" in body
 
 
 def test_parse_note_domains_count_as_tags(tmp_path):

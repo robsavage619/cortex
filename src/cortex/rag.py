@@ -157,7 +157,15 @@ def _parse_note(text: str, note_path: Path) -> tuple[NoteMeta, str]:
 
     title = str(loaded.get("title") or "").strip()
     summary = str(loaded.get("summary") or "").strip()
-    preamble = "\n\n".join(p for p in (title, summary) if p)
+    # Aliases exist to capture the other names a note goes by, which is exactly
+    # the phrasing a query is likely to use ("the t>3 paper", "HLZ 2016").
+    raw_aliases = loaded.get("aliases")
+    aliases = (
+        ", ".join(str(a).strip() for a in raw_aliases if a)
+        if isinstance(raw_aliases, list)
+        else ""
+    )
+    preamble = "\n\n".join(p for p in (title, aliases, summary) if p)
     if preamble:
         body = f"{preamble}\n\n{body.lstrip()}"
 
