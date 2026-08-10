@@ -243,12 +243,46 @@ def _event_yield(db_path: Path) -> dict[str, Any]:
     return out
 
 
+# What each source discards BEFORE storage. Event yield below measures the
+# storage->scoring seam; nothing measures source->storage, because the rows
+# never arrive. The insider filter is the live example: `insider_buys` holds
+# only P-coded open-market purchases, which is why Lakonishok & Lee's net
+# purchase ratio is not computable and the Cohen/Malloy/Pomorski routine
+# classifier cannot be applied. Declared here so an ingest-time filter is at
+# least visible next to the yield numbers rather than invisible entirely.
+_INGEST_FILTERS: dict[str, str] = {
+    "insider_buys": (
+        "TRANS_CODE='P' only — open-market purchases. Sales (S), awards (A), "
+        "gifts and option exercises are dropped at ingest and never stored."
+    ),
+    "congress_trades": (
+        "Senate eFD + House PTR. House scanned (image-only) filings are "
+        "skipped unless OCR is enabled; ~11% of PTRs measured 2026-08-10."
+    ),
+    "fund_holdings": (
+        "14 curated managers only, and quarter-over-quarter DIFFS rather than "
+        "full portfolios — there are no HOLD rows. Renaissance alone is ~74% "
+        "of rows since 2017."
+    ),
+    "short_volume": (
+        "FINRA's archive is rolling (~8 years), so sessions before ~2018-08 "
+        "cannot be fetched at all."
+    ),
+}
+
+
+def _ingest_filters() -> dict[str, Any]:
+    """Declared ingest-time filters — data discarded before it is ever stored."""
+    return dict(_INGEST_FILTERS)
+
+
 def run_audit(db_path: Path) -> AuditReport:
     """Run all integrity checks against a read-only connection."""
     from cortex.storage.db import connect
 
     report = AuditReport()
     report.sections["event_yield"] = _event_yield(db_path)
+    report.sections["ingest_filters"] = _ingest_filters()
     with connect(db_path, read_only=True) as conn:
         report.sections["congress_amendment_duplicates"] = (
             _congress_amendment_duplicates(conn)

@@ -96,6 +96,12 @@ Single user (Rob). Not a product. Optimise for research iteration speed.
 - Flow, not level: Boehmer finds short flow drives out short interest in 13 of 15 reversed sorts. Reg SHO is flow
 - Construction is fixed from the paper and must NOT be swept: sfrac = short/total volume, 5-day formation, 20-day hold, sign negative
 
+## Size dependence — tested, contradicts the literature's prior
+- The report shows each factor's NW t within the larger/smaller half of every monthly cross-section, split at its own median trailing-60d dollar volume
+- **The flow factors are STRONGER in large caps inside CORTEX's range:** fund 2.96 large vs 1.57 small, congress 1.71 vs 0.74, quality 1.49 vs 0.45. Only short and trend lean small
+- So do NOT widen the universe downward on the "these anomalies are small-cap" argument — CORTEX's own data points the other way. Caveat: both halves of the S&P 500 are large-cap by the papers' standards, so this cannot refute Lakonishok/Bernard-Thomas, only show that their prior does not hold inside our range
+- **Subsample t-stats are diagnostics, never promotion candidates.** Selecting a subsample after seeing it manufactures significance
+
 ## Fund factor concentration
 - **Renaissance Technologies is 73.7% of `fund_holdings` rows since 2017**, Bridgewater another 13.3%. The six high-conviction managers are 3.3% combined
 - So the factor does not measure the Best Ideas mechanism it cites — that paper is about concentrated conviction, RenTec runs diversified stat-arb. Any fund-factor result is largely a statement about one manager
@@ -105,6 +111,11 @@ Single user (Rob). Not a product. Optimise for research iteration speed.
 - The two chambers speak different languages: Senate eFD writes English ("Purchase", "Sale (Full)"); House PTRs carry SEC letter codes ("P", "S", "S (partial)", "E"). Any parser touching `transaction_type` must handle both — test the leading token as a code FIRST, or a bare "s" falls through and "p" matches the "partial" in "S (partial)"
 - Congress notional is weighted RAW, not log1p, unlike the fund and insider loaders. This is deliberate as of 2026-08-10: log1p collapses the factor (1.72→1.13 on two-chamber data, 2.24→1.52 on Senate-only). The signal genuinely lives in a handful of very large disclosures, which makes the factor fragile — do not "fix" the inconsistency without re-reading that result
 - Standing tension, unresolved: log-scaled congress is worse standalone but BETTER in the composite (1.98 vs 1.83). Replicated on both data vintages, so it is not noise
+
+## Promotion target: STANDALONE, not composite (settled 2026-08-10)
+- The gate scores the standalone factor ablation. The two disagree — log-scaled congress is worse standalone (1.13) and better in the composite (1.98) — and it recurs on every construction change, so it is settled in `significance.py` rather than re-argued
+- Rationale: the factor is the empirical claim, the composite is packaging; and the composite has free parameters (block weights, membership) while an ablation has none, so promoting on composite performance invites the fitting the gate exists to prevent
+- The composite is still reported and still the thing that would be traded — it just does not earn a factor its place
 
 ## Promotion bar (post-2026-08-10)
 - **Never hardcode a t threshold.** `cortex.significance.build_gate(n_tests)` derives it from the run's actual test count; adding signals raises it for everyone

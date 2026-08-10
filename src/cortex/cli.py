@@ -530,8 +530,13 @@ def _cmd_backtest(args: argparse.Namespace) -> None:
     _gate = _build_gate(len(rep.factor_ics) + len(rep.variants))
     print("  PER-FACTOR ABLATION (standalone information coefficient):")
     print(
+        "  lgNWt/smNWt = NW t within the larger/smaller half of each month's "
+        "cross-section"
+    )
+    print("  by dollar volume — the literature says these effects are small-cap.")
+    print(
         f"   {'factor':10} {'mean IC':>9}  {'t':>6}  {'NW t':>6}  "
-        f"{'bar':>5}  {'cover':>6}  {'+mo':>5}"
+        f"{'bar':>5}  {'cover':>6}  {'+mo':>5}  {'lgNWt':>6}  {'smNWt':>6}"
     )
     for f in rep.factor_ics:
         bar = _gate.threshold_for(f.factor)
@@ -539,7 +544,8 @@ def _cmd_backtest(args: argparse.Namespace) -> None:
         print(
             f"   {f.factor:10} {f.mean_ic:>+9.4f}  {f.ic_tstat:>6.2f}  "
             f"{f.ic_tstat_nw:>6.2f}  {bar:>5.2f}  {f.coverage:>5.0%}  "
-            f"{f.pct_months_positive:>5.0%}{flag}"
+            f"{f.pct_months_positive:>5.0%}  {f.ic_tstat_nw_large:>6.2f}  "
+            f"{f.ic_tstat_nw_small:>6.2f}{flag}"
         )
     print()
     if rep.long_short is not None:

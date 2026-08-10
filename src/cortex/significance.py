@@ -20,6 +20,24 @@ the family of tests, and the two answers apply to different CORTEX factors:
 A single global constant cannot be correct for both, and picking per factor
 *after* seeing a result is exactly what the gate exists to prevent. So the
 assignment is fixed here, in code, ahead of the run.
+
+**The gate scores the STANDALONE factor, not the composite.** This keeps
+resurfacing because the two disagree — log-scaled congress is worse standalone
+and better in the composite, replicated across two data vintages. Standalone
+wins for two reasons. The factor is the empirical claim; the composite is a
+construction choice layered on top, and a claim should be judged before its
+packaging. And the composite has free parameters (block weights, which factors
+are in it) while a standalone ablation has none, so promoting on composite
+performance invites exactly the fitting this module exists to prevent.
+
+The composite is still reported, and still the thing that would be traded. It
+is just not what earns a factor its place.
+
+**Subsample t-stats are diagnostics, never candidates.** The report shows each
+factor's NW t within the larger and smaller half of the cross-section. Those
+exist to reveal size-dependence, and a strong subsample reading is not a
+discovery — selecting the subsample after seeing it is the oldest way to
+manufacture significance.
 """
 
 from __future__ import annotations

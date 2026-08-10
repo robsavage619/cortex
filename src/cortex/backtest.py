@@ -518,6 +518,10 @@ class FactorIC:
     ic_tstat: float  # naive IID t-stat
     ic_tstat_nw: float  # Newey-West HAC t-stat
     coverage: float  # avg fraction of universe with the factor present
+    ic_tstat_nw_large: float = 0.0
+    """NW t within the larger half of the cross-section by dollar volume."""
+    ic_tstat_nw_small: float = 0.0
+    """NW t within the smaller half — where the literature says the effects live."""
     pct_months_positive: float = 0.0
     """Share of scored months with a positive IC.
 
@@ -712,7 +716,6 @@ def run_backtest(
     top_decile: float = 0.10,
 ) -> BacktestReport:
     """Run the point-in-time backtest. Prices come from the DuckDB cache."""
-    from cortex.sources.prices import load_closes
     from cortex.sources.universe import sp500_members_asof, sp500_union
 
     # One extra year of history for the 252d lookback warmup.
@@ -728,7 +731,11 @@ def run_backtest(
 
     # SPY rides along as a cap-weighted reality check; the membership mask
     # keeps it out of every cross-section.
-    closes: Any = load_closes(db_path, [*tickers, "SPY"], hist_start)
+    from cortex.sources.prices import load_ohlcv
+
+    _ohlcv = load_ohlcv(db_path, [*tickers, "SPY"], hist_start)
+    closes: Any = _ohlcv["close"]
+    volumes: Any = _ohlcv["volume"]
     closes = closes.dropna(how="all")
     # yfinance silently omits tickers it fails to price — make the gap visible.
     closes = closes.dropna(axis=1, how="all")
@@ -751,6 +758,11 @@ def run_backtest(
     price_arr = closes.to_numpy()  # [days, names]
     log_px = np.log(price_arr)
     daily_idx: Any = closes.index
+    # Dollar volume is the size proxy for the large/small IC split below.
+    # Shares outstanding would be better but is only derivable from the
+    # fundamentals table, whose coverage is 83-89%; volume is ~100% and
+    # correlates strongly with market cap inside the S&P 500.
+    dollar_vol = volumes.reindex(columns=cols).to_numpy() * price_arr
 
     congress_events = _load_congress_events(db_path)
     fund_events = _load_fund_events(db_path)
@@ -796,6 +808,12 @@ def run_backtest(
     # Aligned per-month IC (NaN when unscored) for the factor-correlation matrix.
     fac_ic_series: dict[str, list[float]] = {k: [] for k in factor_keys}
     fac_cov: dict[str, list[float]] = {k: [] for k in factor_keys}
+    # Is a factor size-dependent inside CORTEX's own universe? Three of the
+    # ingested papers find the anomalies they document are small-cap effects,
+    # measured on 1970s-90s NYSE/AMEX deciles. Rather than infer, split the
+    # cross-section at its own median dollar volume and measure both halves.
+    fac_ic_large: dict[str, list[float]] = {k: [] for k in factor_keys}
+    fac_ic_small: dict[str, list[float]] = {k: [] for k in factor_keys}
     bench_rets: list[float] = []
     spy_rets: list[float] = []
     decile_acc: list[list[float]] = [[] for _ in range(10)]
@@ -920,6 +938,21 @@ def run_backtest(
             if np.isfinite(spy_fwd):
                 spy_rets.append(float(spy_fwd))
 
+        # Split the eligible cross-section at its own median dollar volume.
+        with warnings.catch_warnings():
+            # A name with no volume anywhere in the window is an all-NaN
+            # column; nanmedian's warning is expected and the NaN result is
+            # exactly what the finite-mask below wants.
+            warnings.simplefilter("ignore", RuntimeWarning)
+            dv = np.nanmedian(dollar_vol[max(i - 59, 0) : i + 1], axis=0)
+        dv_elig = np.where(eligible & np.isfinite(dv), dv, np.nan)
+        if np.sum(~np.isnan(dv_elig)) >= 50:
+            cut = float(np.nanmedian(dv_elig))
+            large_mask = eligible & np.isfinite(dv) & (dv >= cut)
+            small_mask = eligible & np.isfinite(dv) & (dv < cut)
+        else:
+            large_mask = small_mask = np.zeros_like(eligible)
+
         # Per-factor IC + coverage (the ablation).
         n_elig = int(eligible.sum())
         for fk, z in zip(
@@ -932,6 +965,14 @@ def run_backtest(
                 fac_ic[fk].append(ic)
             fac_ic_series[fk].append(ic if ic is not None else math.nan)
             fac_cov[fk].append(float(np.sum(~np.isnan(z)) / max(n_elig, 1)))
+            for mask, acc in ((large_mask, fac_ic_large), (small_mask, fac_ic_small)):
+                if not mask.any():
+                    continue
+                sub = _spearman_ic(
+                    np.where(mask, z, np.nan), np.where(mask, fwd, np.nan)
+                )
+                if sub is not None:
+                    acc[fk].append(sub)
 
         # Per-variant IC + top-decile returns.
         for vk in variant_keys:
@@ -1002,7 +1043,11 @@ def run_backtest(
         cov = float(np.mean(fac_cov[fk])) if fac_cov[fk] else 0.0
         series = fac_ic[fk]
         pct_pos = sum(1 for v in series if v > 0) / len(series) if series else 0.0
-        factor_ics.append(FactorIC(fk, ic_m, ic_t, ic_t_nw, cov, pct_pos))
+        _, _, t_large = _series_stats(fac_ic_large[fk])
+        _, _, t_small = _series_stats(fac_ic_small[fk])
+        factor_ics.append(
+            FactorIC(fk, ic_m, ic_t, ic_t_nw, cov, t_large, t_small, pct_pos)
+        )
 
     # Long-short spread: CORTEX top decile (D10) minus bottom decile (D1),
     # aligned month-by-month (both deciles are appended under the same gate).
