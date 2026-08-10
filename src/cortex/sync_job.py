@@ -1,7 +1,8 @@
 """Full data refresh, runnable as an isolated subprocess.
 
-The sync (congress → funds → discover → volatility) is memory-heavy: it pulls
-hundreds of tickers through yfinance/pandas. Running it inside the web process
+The sync (congress → funds → fundamentals → discover → volatility) is memory-
+heavy: it pulls hundreds of tickers through yfinance/pandas. Running it inside
+the web process
 means an OOM there takes down the live site. So the API spawns this as a
 separate process (``cortex sync-all``); the OS OOM-killer targets *this*
 process and the web server keeps serving.
@@ -29,7 +30,14 @@ log = logging.getLogger(__name__)
 # UI recover instead of spinning forever. A full sync takes ~5 min.
 STALE_AFTER_SECONDS = 1800
 
-_STEPS = ("congress", "funds", "discover", "volatility", "executive")
+_STEPS = (
+    "congress",
+    "funds",
+    "fundamentals",
+    "discover",
+    "volatility",
+    "executive",
+)
 
 
 def default_status_path(db_path: Path) -> Path:
@@ -198,7 +206,8 @@ def run_full_sync(
     status_path: Path | None = None,
     only: Iterable[str] | None = None,
 ) -> None:
-    """Run congress → funds → discover → volatility, streaming progress to disk.
+    """Run congress → funds → fundamentals → discover → volatility, streaming
+    progress to disk.
 
     Each stage is independently guarded: a failure in one is recorded and the
     next still runs. Designed to be the entrypoint of an isolated subprocess.
@@ -281,9 +290,7 @@ def run_full_sync(
 
                 breakdown: dict[str, str] = {}
                 new_funds = sync_all_managers(db_path, breakdown=breakdown)
-                n_failed = sum(
-                    1 for v in breakdown.values() if v.startswith("FAILED")
-                )
+                n_failed = sum(1 for v in breakdown.values() if v.startswith("FAILED"))
                 per_manager = "; ".join(
                     f"{m}:{v}" for m, v in sorted(breakdown.items())
                 )
@@ -296,6 +303,27 @@ def run_full_sync(
                 )
             except Exception as exc:  # noqa: BLE001 - record and continue
                 failed("funds", exc)
+
+        if "fundamentals" in selected:
+            try:
+                step("fundamentals", "running")
+                from cortex.sources.fundamentals import sync_universe_fundamentals
+                from cortex.sources.splits import load_splits, uncovered
+                from cortex.sources.universe import sp500_tickers
+
+                universe = sp500_tickers()
+                new = sync_universe_fundamentals(db_path, tickers=universe)
+                # EPS is as-reported; the price cache is back-adjusted. Warm the
+                # split cache here so _load_fundamentals can reconcile the two
+                # without ever reaching for the network mid-backtest.
+                load_splits(db_path, universe)
+                gaps = uncovered(db_path, universe)
+                detail = f"done — {new} new data points"
+                if gaps:
+                    detail += f", {len(gaps)} tickers missing split history"
+                done("fundamentals", new, detail)
+            except Exception as exc:  # noqa: BLE001 - record and continue
+                failed("fundamentals", exc)
 
         if "discover" in selected:
             try:

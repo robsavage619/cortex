@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import duckdb
 
-SCHEMA_VERSION = 17
+SCHEMA_VERSION = 19
 
 DDL_STATEMENTS = (
     """
@@ -206,6 +206,42 @@ DDL_STATEMENTS = (
     )
     """,
     """
+    CREATE TABLE IF NOT EXISTS prices (
+        ticker     VARCHAR   NOT NULL,
+        date       DATE      NOT NULL,
+        close      DOUBLE,
+        high       DOUBLE,
+        low        DOUBLE,
+        volume     DOUBLE,
+        source     VARCHAR   NOT NULL DEFAULT 'yfinance',
+        fetched_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (ticker, date)
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS price_coverage (
+        ticker      VARCHAR   PRIMARY KEY,
+        cover_start DATE      NOT NULL,
+        cover_end   DATE      NOT NULL,
+        fetched_at  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS splits (
+        ticker     VARCHAR   NOT NULL,
+        date       DATE      NOT NULL,
+        ratio      DOUBLE    NOT NULL,
+        fetched_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (ticker, date)
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS split_coverage (
+        ticker     VARCHAR   PRIMARY KEY,
+        fetched_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+    """,
+    """
     CREATE TABLE IF NOT EXISTS factor_history (
         snapshot_date DATE     NOT NULL,
         factor        VARCHAR  NOT NULL,
@@ -258,6 +294,9 @@ MIGRATION_STATEMENTS = (
     "ALTER TABLE candidates ADD COLUMN IF NOT EXISTS z_trend DOUBLE",
     "ALTER TABLE candidates ADD COLUMN IF NOT EXISTS z_congress DOUBLE",
     "ALTER TABLE candidates ADD COLUMN IF NOT EXISTS z_fund_flow DOUBLE",
+    # v18 — survivorship correction: mean fraction of true point-in-time S&P
+    # members priced per month (NULL for pre-v18 snapshots).
+    "ALTER TABLE factor_history ADD COLUMN IF NOT EXISTS universe_coverage DOUBLE",
 )
 
 

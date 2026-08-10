@@ -220,3 +220,4 @@ __marimo__/
 # DuckDB
 data/duckdb/*.db
 data/duckdb/*.wal
+data/duckdb/*.json

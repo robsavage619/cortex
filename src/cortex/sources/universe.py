@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import logging
+from datetime import date
 from functools import lru_cache
+from pathlib import Path
 
 log = logging.getLogger(__name__)
 
@@ -220,3 +222,78 @@ def composite_tickers() -> list[str]:
             out.append(t)
     log.info("Universe: composite = %d tickers", len(out))
     return out
+
+
+# ── Point-in-time membership (survivorship-bias correction) ──────────────────
+
+# Vendored snapshot file: date → full S&P 500 membership as of that date.
+# Provenance (source repo, retrieval date, sha256) lives in its '#' header.
+_HISTORY_CSV = (
+    Path(__file__).resolve().parents[3] / "data" / "reference" / "sp500_history.csv"
+)
+
+
+@lru_cache(maxsize=1)
+def _membership_history(path: Path | None = None) -> list[tuple[date, frozenset[str]]]:
+    """Parse the vendored snapshot CSV into a sorted (date, members) list.
+
+    Tickers are normalised to yfinance convention ('.' → '-', e.g. BF.B → BF-B)
+    to match every other universe function in this module.
+    """
+    import csv
+
+    target = path or _HISTORY_CSV
+    out: list[tuple[date, frozenset[str]]] = []
+    with target.open(newline="") as fh:
+        reader = csv.reader(line for line in fh if not line.startswith("#"))
+        header = next(reader)
+        if header[:2] != ["date", "tickers"]:
+            raise ValueError(f"unexpected sp500 history header: {header!r}")
+        for row in reader:
+            when = date.fromisoformat(row[0])
+            members = frozenset(
+                t.strip().replace(".", "-") for t in row[1].split(",") if t.strip()
+            )
+            out.append((when, members))
+    out.sort(key=lambda x: x[0])
+    if not out:
+        raise ValueError(f"empty sp500 membership history: {target}")
+    log.info(
+        "Universe: loaded %d S&P 500 membership snapshots (%s → %s)",
+        len(out),
+        out[0][0],
+        out[-1][0],
+    )
+    return out
+
+
+def sp500_members_asof(as_of: date) -> frozenset[str]:
+    """Return S&P 500 membership as of a date (most recent snapshot ≤ date).
+
+    Dates before the first snapshot (1996-01-02) raise — silently returning
+    the earliest membership would fabricate pre-1996 history.
+    """
+    history = _membership_history()
+    if as_of < history[0][0]:
+        raise ValueError(f"no S&P 500 membership snapshot on or before {as_of}")
+    members = history[0][1]
+    for when, snap in history:
+        if when > as_of:
+            break
+        members = snap
+    return members
+
+
+def sp500_union(start: date, end: date | None = None) -> list[str]:
+    """Every ticker that was an S&P 500 member at any point in [start, end]."""
+    end_eff = end or date.today()
+    history = _membership_history()
+    union: set[str] = set(history[0][1])
+    for when, snap in history:
+        if when > end_eff:
+            break
+        if when <= start:
+            union = set(snap)  # snapshot in force at `start`
+        else:
+            union |= snap  # membership changed inside the window
+    return sorted(union)

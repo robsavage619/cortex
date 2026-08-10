@@ -40,9 +40,16 @@ Single user (Rob). Not a product. Optimise for research iteration speed.
 - Default `from_year=2017` everywhere. Do not change without backtesting first.
 
 ### Pre-registration threshold: t ≥ 3.0 (Bonferroni-corrected)
-- Congress factor t=2.59, fund t=2.29, CORTEX composite t=2.40 as of last backtest (2026-07-06)
+- Congress factor NW t=2.36, fund t=2.64, CORTEX composite t=2.32 as of last backtest (2026-07-16, survivorship-corrected pipeline)
 - None clear the bar yet — no live trading until at least one factor does
 - **Journal 2026-07-06 (post-remediation):** old → new: congress 2.40→2.59 (+0.19, amendment exclusion removed ~1,978 double-counted rows), fund 2.58→2.29 (-0.29, EXIT preservation changed the event set), composite 1.89→2.40 (+0.51, brain alignment fixed: discovery now computes the same 3-block equal-weight signal as the backtest). Long-short spread NW t=2.98 (was not tracked). No factor clears t≥3.0.
+- **Journal 2026-07-16 (methodology hardening, same data vintage):** old → new: congress 2.59→2.36, fund 2.29→2.64, composite 2.40→2.32, L/S 2.98→2.55 gross / 2.08 net. Drivers: point-in-time S&P 500 universe (742-name union vs 503 current members; monthly priced-member coverage mean 91%, worst 81% — residual delisting bias measured, not hidden), L/S costed (10bps long / 25bps short per side), OOS verdict re-keyed to NW t (OOS NW t=2.33 → "interesting, unconfirmed"). The t≥3.0 bar did not move. Event-study CARs (now market-model, overlap-collapsed) are flat-to-negative for congress at long horizons — the monthly IC framing carries the signal, not event CARs.
+
+### Price data (post-2026-07-16)
+- All research prices go through `cortex.sources.prices` (DuckDB `prices` + `price_coverage`, schema v18) — never call `yf.download` directly in research code
+- yfinance quirks: dead tickers come back as all-NaN COLUMNS in mixed batches but as an EMPTY frame when the whole batch is dead — the cache uses a SPY canary probe to distinguish "all dead" from "yfinance down" before recording names as unpriceable
+- Stooq CSV endpoint is blocked by a JS proof-of-work challenge (2026-07-16) — delisted-price fallback prices 0 names; the gap surfaces in the backtest's universe-coverage ratio
+- Point-in-time S&P membership: `sp500_members_asof()` / `sp500_union()` backed by vendored `data/reference/sp500_history.csv` (fja05680/sp500; refresh by re-downloading, provenance in the file header)
 
 ### Factor signals in scope
 - `congress_trades` — EDGAR bulk EFTS JSON

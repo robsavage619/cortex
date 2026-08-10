@@ -120,8 +120,8 @@ if _credentials:
     app.add_middleware(_BasicAuthMiddleware, credentials=_credentials)
     log.info("startup: HTTP Basic Auth enabled for users: %s", list(_credentials))
 elif _is_production:
-    log.warning(
-        "startup: no auth credentials set — app is running without authentication. "
+    raise RuntimeError(
+        "startup: no auth credentials set in production — refusing to serve. "
         "Set CORTEX_AUTH_USERS or CORTEX_AUTH_USER + CORTEX_AUTH_PASS."
     )
 

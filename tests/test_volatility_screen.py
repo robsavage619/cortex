@@ -4,12 +4,11 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
-import pytest
 
 from cortex.storage.db import connect
 from cortex.storage.schemas import apply_schema
 from cortex.volatility_screen import (
-    _metrics_batch,
+    _metrics_from_frames,
     _sign,
     list_volatility_screen,
     run_volatility_screen,
@@ -22,38 +21,42 @@ def test_sign():
     assert _sign(0.0) == 0
 
 
-def _ohlc_frame(tickers: list[str], closes: dict[str, list[float]]) -> pd.DataFrame:
-    """Build the MultiIndex (field, ticker) frame yf.download returns."""
+def _ohlc_frames(
+    tickers: list[str], closes: dict[str, list[float]]
+) -> dict[str, pd.DataFrame]:
+    """Build the wide per-field frames the price cache returns."""
     n = len(next(iter(closes.values())))
     idx = pd.bdate_range("2026-01-02", periods=n)
-    data = {}
-    for t in tickers:
-        c = np.array(closes[t], dtype=float)
-        data[("Close", t)] = c
-        data[("High", t)] = c * 1.02
-        data[("Low", t)] = c * 0.98
-        data[("Volume", t)] = np.full(n, 1_000_000.0)
-    return pd.DataFrame(data, index=idx)
+    c = pd.DataFrame({t: np.array(closes[t], dtype=float) for t in tickers}, index=idx)
+    return {
+        "close": c,
+        "high": c * 1.02,
+        "low": c * 0.98,
+        "volume": pd.DataFrame(
+            {t: np.full(n, 1_000_000.0) for t in tickers}, index=idx
+        ),
+    }
 
 
-@pytest.fixture
-def fake_download(monkeypatch):
-    def _install(frame: pd.DataFrame) -> None:
-        import yfinance
+def _metrics(tickers: list[str], frames: dict[str, pd.DataFrame], lookback: int):
+    return _metrics_from_frames(
+        frames["high"],
+        frames["low"],
+        frames["close"],
+        frames["volume"],
+        tickers,
+        lookback,
+    )
 
-        monkeypatch.setattr(yfinance, "download", lambda *a, **k: frame.copy())
 
-    return _install
-
-
-def test_metrics_batch_scores_swinger_above_trender(fake_download):
+def test_metrics_scores_swinger_above_trender():
     n = 40
     # OSC oscillates hard around 100; TREND drifts smoothly upward.
     osc = [100.0 + (8.0 if i % 2 == 0 else -8.0) for i in range(n)]
     trend = [100.0 + i * 0.3 for i in range(n)]
-    fake_download(_ohlc_frame(["OSC", "TREND"], {"OSC": osc, "TREND": trend}))
+    frames = _ohlc_frames(["OSC", "TREND"], {"OSC": osc, "TREND": trend})
 
-    m = _metrics_batch(["OSC", "TREND"], lookback_days=20)
+    m = _metrics(["OSC", "TREND"], frames, 20)
 
     assert m["OSC"]["oscillation_score"] > m["TREND"]["oscillation_score"]
     assert m["OSC"]["direction_changes"] > m["TREND"]["direction_changes"]
@@ -63,24 +66,24 @@ def test_metrics_batch_scores_swinger_above_trender(fake_download):
         assert m[t]["avg_close"] > 0
 
 
-def test_metrics_batch_short_history_gets_empty_metrics(fake_download):
-    fake_download(
-        _ohlc_frame(["SHORT"], {"SHORT": [100.0, 101.0, 99.0, 100.5, 100.0]})
-    )
-    m = _metrics_batch(["SHORT"], lookback_days=20)
+def test_metrics_short_history_gets_empty_metrics():
+    frames = _ohlc_frames(["SHORT"], {"SHORT": [100.0, 101.0, 99.0, 100.5, 100.0]})
+    m = _metrics(["SHORT"], frames, 20)
     assert m["SHORT"]["swing_score"] == 0.0
     assert m["SHORT"]["avg_dollar_range"] is None
 
 
-def test_metrics_batch_missing_ticker_gets_empty_metrics(fake_download):
+def test_metrics_missing_ticker_gets_empty_metrics():
     n = 40
-    fake_download(_ohlc_frame(["AAA"], {"AAA": [100.0 + i for i in range(n)]}))
-    m = _metrics_batch(["AAA", "MISSING"], lookback_days=20)
+    frames = _ohlc_frames(["AAA"], {"AAA": [100.0 + i for i in range(n)]})
+    m = _metrics(["AAA", "MISSING"], frames, 20)
     assert m["MISSING"]["swing_score"] == 0.0
     assert m["AAA"]["swing_score"] > 0
 
 
-def _synthetic_metrics(tickers: list[str], _lookback: int) -> dict[str, dict[str, Any]]:
+def _synthetic_metrics(
+    _db: Any, tickers: list[str], _lookback: int
+) -> dict[str, dict[str, Any]]:
     out: dict[str, dict[str, Any]] = {}
     for i, t in enumerate(tickers):
         score = float(len(tickers) - i)  # earlier ticker = higher score
@@ -104,9 +107,7 @@ def _synthetic_metrics(tickers: list[str], _lookback: int) -> dict[str, dict[str
 
 
 def test_run_volatility_screen_ranking_and_round_trip(tmp_path, monkeypatch):
-    monkeypatch.setattr(
-        "cortex.volatility_screen._compute_metrics", _synthetic_metrics
-    )
+    monkeypatch.setattr("cortex.volatility_screen._compute_metrics", _synthetic_metrics)
     monkeypatch.setattr(
         "cortex.volatility_screen._fetch_company_names",
         lambda ts: {t: f"{t} Corp" for t in ts},
@@ -123,18 +124,12 @@ def test_run_volatility_screen_ranking_and_round_trip(tmp_path, monkeypatch):
     assert all(s.swing_score > 0 for s in stocks)
 
     loaded = list_volatility_screen(db)
-    assert [(s.ticker, s.rank) for s in loaded] == [
-        (s.ticker, s.rank) for s in stocks
-    ]
+    assert [(s.ticker, s.rank) for s in loaded] == [(s.ticker, s.rank) for s in stocks]
     assert loaded[0].company_name == "AL Corp"
 
 
-def test_run_volatility_screen_empty_metrics_preserves_existing(
-    tmp_path, monkeypatch
-):
-    monkeypatch.setattr(
-        "cortex.volatility_screen._compute_metrics", _synthetic_metrics
-    )
+def test_run_volatility_screen_empty_metrics_preserves_existing(tmp_path, monkeypatch):
+    monkeypatch.setattr("cortex.volatility_screen._compute_metrics", _synthetic_metrics)
     monkeypatch.setattr(
         "cortex.volatility_screen._fetch_company_names",
         lambda ts: dict.fromkeys(ts),
@@ -146,9 +141,9 @@ def test_run_volatility_screen_empty_metrics_preserves_existing(
     assert len(list_volatility_screen(db)) == 2
 
     # A run where every name scores zero must NOT wipe the stored screen.
-    def _all_zero(ts: list[str], lb: int) -> dict[str, dict[str, Any]]:
+    def _all_zero(db: Any, ts: list[str], lb: int) -> dict[str, dict[str, Any]]:
         return {
-            t: {**_synthetic_metrics(ts, lb)[t], "swing_score": 0.0} for t in ts
+            t: {**_synthetic_metrics(db, ts, lb)[t], "swing_score": 0.0} for t in ts
         }
 
     monkeypatch.setattr("cortex.volatility_screen._compute_metrics", _all_zero)

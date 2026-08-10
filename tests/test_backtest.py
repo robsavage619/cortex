@@ -54,6 +54,113 @@ def test_fundamental_asof_is_point_in_time():
     assert asof_end["MSFT"].eps_diluted == 11.0
 
 
+def test_load_fundamentals_breaks_filing_date_ties_by_period(tmp_path):
+    """One 10-K discloses several comparative periods under a single filing_date.
+
+    The rows are inserted newest-period-first so storage order alone would hand
+    _fundamental_asof the *oldest* period — the defect that priced WDC off a
+    2023 quarter and left SNDK with a NULL EPS.
+    """
+    from cortex.backtest import _load_fundamentals
+    from cortex.storage.db import connect
+    from cortex.storage.schemas import apply_schema
+
+    db = tmp_path / "f.db"
+    with connect(db) as conn:
+        apply_schema(conn)
+        conn.executemany(
+            "INSERT INTO fundamentals "
+            "(ticker, period_end, filing_date, eps_diluted, net_income, equity) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            [
+                ("WDC", dt.date(2025, 6, 27), dt.date(2025, 8, 14), 9.9, 200.0, 1000.0),
+                (
+                    "WDC",
+                    dt.date(2023, 9, 29),
+                    dt.date(2025, 8, 14),
+                    -2.17,
+                    -50.0,
+                    1000.0,
+                ),
+            ],
+        )
+
+    asof = _fundamental_asof(_load_fundamentals(db), dt.date(2026, 8, 10))
+    assert asof["WDC"].eps_diluted == 9.9
+
+
+def test_split_factor_since_only_counts_events_in_window():
+    from cortex.sources.splits import split_factor_since
+
+    events = [
+        (dt.date(2020, 8, 31), 4.0),
+        (dt.date(2024, 6, 10), 10.0),
+    ]
+    # Filed after both splits — nothing to restate.
+    assert split_factor_since(events, dt.date(2025, 1, 1), dt.date(2026, 8, 10)) == 1.0
+    # Filed between them — only the 2024 split applies.
+    assert split_factor_since(events, dt.date(2022, 1, 1), dt.date(2026, 8, 10)) == 10.0
+    # Filed before both — compounding.
+    assert split_factor_since(events, dt.date(2019, 1, 1), dt.date(2026, 8, 10)) == 40.0
+    # A split on the filing date itself is already in the reported share count.
+    assert split_factor_since(events, dt.date(2024, 6, 10), dt.date(2026, 8, 10)) == 1.0
+
+
+def test_load_fundamentals_restates_eps_onto_adjusted_split_basis(tmp_path):
+    """As-reported EPS vs back-adjusted prices is the BKNG implied-P/E-1.3 bug.
+
+    A 20:1 split after the filing means one reported share is now 20, so EPS
+    must be divided by 20 to sit on the same basis as the adjusted close.
+    """
+    from cortex.backtest import _load_fundamentals
+    from cortex.sources.splits import store_splits
+    from cortex.storage.db import connect
+    from cortex.storage.schemas import apply_schema
+
+    db = tmp_path / "s.db"
+    with connect(db) as conn:
+        apply_schema(conn)
+        conn.execute(
+            "INSERT INTO fundamentals "
+            "(ticker, period_end, filing_date, eps_diluted, net_income, equity) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            [
+                "BKNG",
+                dt.date(2025, 12, 31),
+                dt.date(2026, 2, 18),
+                165.57,
+                200.0,
+                1000.0,
+            ],
+        )
+    store_splits(db, {"BKNG": [(dt.date(2026, 5, 1), 20.0)]})
+
+    asof = _fundamental_asof(_load_fundamentals(db), dt.date(2026, 8, 10))
+    assert asof["BKNG"].eps_diluted == pytest.approx(165.57 / 20.0)
+    # ROE is a ratio of aggregates — split-invariant, must be untouched.
+    assert asof["BKNG"].roe == pytest.approx(0.2)
+
+
+def test_load_fundamentals_leaves_eps_alone_without_cached_splits(tmp_path):
+    """No split coverage must degrade to a no-op, never to a silent guess."""
+    from cortex.backtest import _load_fundamentals
+    from cortex.storage.db import connect
+    from cortex.storage.schemas import apply_schema
+
+    db = tmp_path / "n.db"
+    with connect(db) as conn:
+        apply_schema(conn)
+        conn.execute(
+            "INSERT INTO fundamentals "
+            "(ticker, period_end, filing_date, eps_diluted, net_income, equity) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            ["AAPL", dt.date(2025, 9, 27), dt.date(2025, 10, 30), 6.5, 100.0, 500.0],
+        )
+
+    asof = _fundamental_asof(_load_fundamentals(db), dt.date(2026, 8, 10))
+    assert asof["AAPL"].eps_diluted == 6.5
+
+
 def test_zscore_winsorizes_and_preserves_nan():
     vals = np.array([1.0, 2.0, 3.0, 4.0, 5.0, np.nan, 100.0])
     z = _zscore(vals)

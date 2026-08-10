@@ -6,6 +6,91 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Value-factor data integrity (2026-08-10, schema v19)
+
+Two independent defects were corrupting the fundamental block. Both are fixed;
+**the pre-registered t-stats below were computed on the corrupted inputs and
+must be re-measured before they are quoted again.**
+
+- **Comparative-period tie-break.** `_load_fundamentals` ordered only by
+  `filing_date`. One 10-K discloses several comparative periods under a single
+  filing date, so tied rows fell in arbitrary storage order and the last-wins
+  scan in `_fundamental_asof` kept whichever landed last. WDC was priced off a
+  2023 quarter (EPS −2.17); SNDK resolved to a 2022 row with a NULL EPS. Now
+  ordered by `(filing_date, period_end)`. Live effect: SNDK #1→#3, WDC #8→#5.
+- **As-reported EPS vs back-adjusted prices.** The price cache is yfinance
+  `auto_adjust=True` (re-based retroactively by every split); EDGAR EPS is on
+  the share count in force at filing. Their ratio inflates earnings yield by the
+  cumulative split factor — BKNG showed an implied P/E of 1.3, KLAC 6.4, EIX
+  5.9. New `splits` + `split_coverage` tables (`cortex.sources.splits`) restate
+  EPS onto the adjusted basis inside `_load_fundamentals`. ROE is a ratio of
+  aggregates and is left untouched.
+
+`_load_fundamentals` reads only the cached `splits` table and never the network,
+so backtests stay reproducible; the cache is warmed by the new `fundamentals`
+sync step. Coverage is tracked per ticker because "no splits ever" and "never
+fetched" are otherwise indistinguishable, and uncovered names are reported
+rather than silently treated as unsplit.
+
+- **`sync-all` now runs `fundamentals`.** `_STEPS` was
+  `congress, funds, discover, volatility, executive` — `sync_runs` confirms a
+  fundamentals sync had never once run from the refresh path, so the value and
+  quality legs were computed against whatever EDGAR data was last pulled by
+  hand. The step runs before `discover` and also warms the split cache.
+
+### Methodology hardening + re-baseline (2026-07-16)
+
+The pre-registered suite was re-measured on a hardened pipeline (same data
+vintage as the 2026-07-06 journal; only methodology changed — the t≥3.0 bar
+itself did not move):
+
+| metric (NW t) | old (2026-07-06) | new (2026-07-16) | why it moved |
+|---|---|---|---|
+| congress ablation | 2.59 | 2.36 | point-in-time universe |
+| fund ablation | 2.29 | 2.64 | point-in-time universe |
+| composite | 2.40 | 2.32 | point-in-time universe |
+| L/S spread (gross) | 2.98 | 2.55 | point-in-time universe |
+| L/S spread (net) | — | 2.08 | now costed (10bps long / 25bps short per side) |
+| congress OOS verdict | naive t | NW t 2.33 | verdict re-keyed to NW |
+
+Still no factor clears the t≥3.0 gate. **No live trading.**
+
+What changed:
+
+- **Survivorship bias corrected.** Universe is now point-in-time S&P 500
+  membership (vendored snapshot history at `data/reference/sp500_history.csv`,
+  1996→present, validated against known adds/removes). Monthly cross-sections
+  keep only that month's true members: 742-name union since 2016 vs the 503
+  current members the old backtest saw. Residual delisting bias is *measured*
+  per month (priced members / true members: mean 91%, worst month 81%) and
+  printed with every run; 123 dead tickers are unpriceable by any free source
+  (yfinance dropped them; Stooq now fronts a JS challenge that blocks headless
+  CSV fetches — fallback code kept, degrades gracefully).
+- **Prices persisted in DuckDB** (`prices` + `price_coverage`, schema v18).
+  All research price access goes through `cortex.sources.prices` with
+  fetch-missing-then-cache semantics, adjustment-drift self-healing on
+  dividend re-basing, and a canary probe that distinguishes dead tickers from
+  yfinance outages. A backtest re-run is now network-free, ~2s, and
+  bit-identical. Live screens (discovery, swing) top up only the missing tail.
+- **OOS verdict keys off the Newey-West t-stat** (monthly ICs are
+  autocorrelated; the naive IID t overstated significance). Both stats still
+  printed.
+- **Event study upgraded to a market model** — per-name (α, β) estimated on a
+  252d pre-event window (30d gap, min 120 obs), market-adjusted fallback
+  disclosed. Overlapping same-ticker events are collapsed per horizon
+  (collapsed counts printed). CARs explicitly labeled GROSS. Post-upgrade the
+  congress CAR is flat-to-negative at long horizons with a small negative
+  pre-event placebo — the monthly-IC framing, not the event CAR, carries the
+  congress signal.
+- **L/S spread now reported net of costs** (turnover-based, +15bps/side
+  short-leg borrow assumption) alongside gross; SPY added as a cap-weighted
+  reality-check benchmark next to the EW null.
+- **Offline test harness** — `tests/fixtures/prices.py` seeds the price cache
+  with deterministic synthetic universes; `tests/test_backtest_integration.py`
+  runs the full backtest/OOS/event-study stack network-free (planted-factor
+  recovery, PIT-coverage semantics, NW verdict keying, market-model
+  beta-stripping, overlap collapse, cost accounting).
+
 ### Security
 - Removed all hardcoded personal contact details from source. The SEC EDGAR
   `User-Agent` / identity is now read from `CORTEX_SEC_USER_AGENT` via a single helper,

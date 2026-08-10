@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -50,64 +50,53 @@ class VolStock:
 # ── Metric computation ─────────────────────────────────────────────────────────
 
 
-# Batch size for yfinance bulk downloads — the swing screen spans the S&P 500 +
-# S&P 400 (~900 tickers); a single download OOM-kills a small instance. 40-ticker
-# batches (4 OHLCV fields each) keep peak memory flat and are released per batch.
-_OHLC_BATCH = 40
+# Calendar days of history for the swing window (~3 months plus slack).
+_OHLC_LOOKBACK_DAYS = 100
 
 
 def _compute_metrics(
-    tickers: list[str], lookback_days: int
+    db_path: Path, tickers: list[str], lookback_days: int
 ) -> dict[str, dict[str, Any]]:
-    """Download recent OHLC data and compute swing-screen metrics per ticker.
+    """Load recent OHLC bars from the price cache and compute swing metrics.
 
-    Downloads in :data:`_OHLC_BATCH`-sized batches so peak memory stays flat
-    regardless of universe size. Returns a dict keyed by ticker with the metric
+    The cache tops up only the missing tail (staleness 0 — a live screen must
+    see the latest close). Returns a dict keyed by ticker with the metric
     keys mirrored on :class:`VolStock` (avg_dollar_range, range_consistency,
     oscillation_score, net_drift_pct, range_position, direction_changes, …).
     """
-    import gc
+    from cortex.sources.prices import load_ohlcv
 
-    log.info("Downloading 3mo OHLC for %d tickers (batched)…", len(tickers))
-    results: dict[str, dict[str, Any]] = {}
-    for start in range(0, len(tickers), _OHLC_BATCH):
-        batch = tickers[start : start + _OHLC_BATCH]
-        results.update(_metrics_batch(batch, lookback_days))
-        gc.collect()
-    return results
-
-
-def _metrics_batch(tickers: list[str], lookback_days: int) -> dict[str, dict[str, Any]]:
-    """Compute swing metrics for a single batch of tickers (see _compute_metrics)."""
-    import yfinance as yf
-
-    raw: Any = yf.download(
+    log.info("Loading 3mo OHLC for %d tickers (cached)…", len(tickers))
+    frames = load_ohlcv(
+        db_path,
         tickers,
-        period="3mo",
-        auto_adjust=True,
-        progress=False,
-        threads=True,
+        date.today() - timedelta(days=_OHLC_LOOKBACK_DAYS),
+        max_staleness_days=0,
+    )
+    return _metrics_from_frames(
+        frames["high"],
+        frames["low"],
+        frames["close"],
+        frames["volume"],
+        tickers,
+        lookback_days,
     )
 
-    # yf.download gives MultiIndex columns (field, ticker) for >1 ticker and a
-    # single-level frame for one ticker. Normalise each field to a frame keyed
-    # by ticker so the per-ticker loop can index uniformly.
-    if len(tickers) == 1:
-        highs_df = raw[["High"]].rename(columns={"High": tickers[0]})
-        lows_df = raw[["Low"]].rename(columns={"Low": tickers[0]})
-        closes_df = raw[["Close"]].rename(columns={"Close": tickers[0]})
-        volumes_df = raw[["Volume"]].rename(columns={"Volume": tickers[0]})
-    else:
-        highs_df = raw["High"]
-        lows_df = raw["Low"]
-        closes_df = raw["Close"]
-        volumes_df = raw["Volume"]
+
+def _metrics_from_frames(
+    highs_df: Any,
+    lows_df: Any,
+    closes_df: Any,
+    volumes_df: Any,
+    tickers: list[str],
+    lookback_days: int,
+) -> dict[str, dict[str, Any]]:
+    """Compute swing metrics per ticker from wide OHLCV frames."""
     # float32 halves resident memory; swing math tolerates it fine.
-    highs_df = highs_df.astype("float32")
-    lows_df = lows_df.astype("float32")
-    closes_df = closes_df.astype("float32")
-    volumes_df = volumes_df.astype("float32")
-    del raw
+    highs_df = highs_df.astype("float32") if not highs_df.empty else highs_df
+    lows_df = lows_df.astype("float32") if not lows_df.empty else lows_df
+    closes_df = closes_df.astype("float32") if not closes_df.empty else closes_df
+    volumes_df = volumes_df.astype("float32") if not volumes_df.empty else volumes_df
 
     empty = {
         "avg_dollar_range": None,
@@ -366,7 +355,7 @@ def run_volatility_screen(
         tickers = composite_tickers()
     log.info("Swing screen: scanning %d tickers (%dd window)", len(tickers), lookback)
 
-    metrics = _compute_metrics(tickers, lookback)
+    metrics = _compute_metrics(db_path, tickers, lookback)
 
     ranked = sorted(
         tickers,

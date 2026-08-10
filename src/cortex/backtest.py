@@ -16,7 +16,13 @@ Designed to a strict methodology (no look-ahead, zero tunable parameters):
   earn credit if the full composite beats them.
 
 KNOWN BIASES (disclosed, not hidden):
-- Universe = *current* S&P 500 members → survivorship bias inflates everything.
+- Universe = point-in-time S&P 500 membership (vendored snapshot history in
+  data/reference/sp500_history.csv); each monthly cross-section keeps only
+  that month's true members. Residual delisting bias remains where neither
+  yfinance nor the Stooq fallback can price a dead ticker — the per-month
+  coverage ratio in the report measures exactly that gap. (Stooq is
+  currently gated by a JS challenge, so in practice the gap ≈ all names
+  yfinance can no longer price.)
 - Flow factors are sparse and momentum-correlated; treat as a tilt.
 """
 
@@ -67,6 +73,7 @@ from cortex.composite import (
 log = logging.getLogger(__name__)
 
 _COST_PER_SIDE = 0.0010  # 10 bps
+_SHORT_COST_EXTRA = 0.0015  # extra 15 bps/side on the short leg (borrow/locate)
 _TRADING_DAYS = 252
 
 
@@ -141,7 +148,20 @@ class _Fundamental:
 
 
 def _load_fundamentals(db_path: Path) -> list[_Fundamental]:
-    """Point-in-time annual fundamentals, oldest filing first."""
+    """Point-in-time annual fundamentals, oldest filing first.
+
+    A single 10-K carries several comparative periods, so many rows share one
+    filing_date; period_end breaks the tie so the last-wins scan in
+    :func:`_fundamental_asof` lands on the newest period the filing disclosed
+    rather than an arbitrary storage-order row.
+
+    EPS is restated onto the split basis of the cached price series, which
+    yfinance back-adjusts to the present. Only the cached ``splits`` table is
+    consulted — never the network — so a backtest re-run stays reproducible;
+    warm it via :func:`cortex.sources.splits.load_splits` before relying on the
+    value factor. ROE is a ratio and needs no adjustment.
+    """
+    from cortex.sources.splits import load_splits, split_factor_since
     from cortex.storage.db import connect
 
     try:
@@ -150,15 +170,23 @@ def _load_fundamentals(db_path: Path) -> list[_Fundamental]:
                 """
                 SELECT ticker, filing_date, eps_diluted, net_income, equity
                 FROM fundamentals
-                ORDER BY filing_date
+                ORDER BY filing_date, period_end
                 """
             ).fetchall()
     except Exception:  # noqa: BLE001 - table may be empty/absent
         return []
+
+    today = date.today()
+    splits = load_splits(db_path, [r[0].upper() for r in rows], fetch_missing=False)
     out: list[_Fundamental] = []
     for ticker, fd, eps, ni, eq in rows:
+        tk = ticker.upper()
         roe = (ni / eq) if (ni is not None and eq not in (None, 0)) else None
-        out.append(_Fundamental(ticker.upper(), fd, eps, roe))
+        if eps is not None and fd is not None:
+            factor = split_factor_since(splits.get(tk, []), fd, today)
+            if factor != 1.0:
+                eps = eps / factor
+        out.append(_Fundamental(tk, fd, eps, roe))
     return out
 
 
@@ -347,6 +375,10 @@ class LongShortResult:
     The long-short return strips market beta from the long-only top decile,
     isolating the factor's directional content. A real factor produces a
     positive spread whose mean clears the HAC t-stat bar.
+
+    Gross and net are both reported: net charges turnover-based costs of
+    10 bps/side on the long leg and 25 bps/side on the short leg (the extra
+    15 bps is a disclosed borrow/locate assumption).
     """
 
     mean_monthly: float
@@ -354,6 +386,10 @@ class LongShortResult:
     cagr: float
     sharpe: float
     n_months: int
+    mean_monthly_net: float = 0.0
+    tstat_nw_net: float = 0.0
+    cagr_net: float = 0.0
+    sharpe_net: float = 0.0
 
 
 @dataclass
@@ -381,6 +417,14 @@ class BacktestReport:
     factor_corr: FactorCorrelation | None = None
     n_tickers_requested: int = 0
     n_tickers_priced: int = 0
+    # Point-in-time universe honesty: fraction of that month's actual S&P 500
+    # members we could price. <1.0 means residual delisting bias remains.
+    universe_coverage_mean: float = 0.0
+    universe_coverage_min: float = 0.0
+    # Cap-weighted reality check ("would I have just bought the index?").
+    # The EW benchmark stays the fair null — the strategy itself is EW.
+    spy_cagr: float | None = None
+    spy_sharpe: float | None = None
 
 
 def _annualize(monthly: list[float]) -> tuple[float, float, float]:
@@ -506,24 +550,29 @@ def run_backtest(
     start_year: int = 2017,
     top_decile: float = 0.10,
 ) -> BacktestReport:
-    """Run the point-in-time backtest. Downloads prices via yfinance."""
-    import yfinance as yf
+    """Run the point-in-time backtest. Prices come from the DuckDB cache."""
+    from cortex.sources.prices import load_closes
+    from cortex.sources.universe import sp500_members_asof, sp500_union
 
-    from cortex.sources.universe import sp500_tickers
-
-    tickers = sp500_tickers()
-    log.info("Backtest universe: %d tickers (survivorship-biased)", len(tickers))
-
-    start = f"{start_year - 1}-01-01"  # one extra year for 252d lookback warmup
-    raw: Any = yf.download(
-        tickers, start=start, auto_adjust=True, progress=False, threads=True
+    # One extra year of history for the 252d lookback warmup.
+    hist_start = date(start_year - 1, 1, 1)
+    # Point-in-time universe: every name that was a member at any point in the
+    # window; each monthly cross-section keeps only that month's true members.
+    tickers = sp500_union(hist_start)
+    log.info(
+        "Backtest universe: %d point-in-time members (union since %s)",
+        len(tickers),
+        hist_start,
     )
-    closes: Any = raw["Close"] if len(tickers) > 1 else raw[["Close"]]
+
+    # SPY rides along as a cap-weighted reality check; the membership mask
+    # keeps it out of every cross-section.
+    closes: Any = load_closes(db_path, [*tickers, "SPY"], hist_start)
     closes = closes.dropna(how="all")
     # yfinance silently omits tickers it fails to price — make the gap visible.
     closes = closes.dropna(axis=1, how="all")
     n_requested = len(tickers)
-    n_priced = int(closes.shape[1])
+    n_priced = int(closes.shape[1]) - (1 if "SPY" in closes.columns else 0)
     coverage = n_priced / n_requested if n_requested else 0.0
     missing = sorted(set(tickers) - set(closes.columns))
     if coverage < 0.95:
@@ -585,12 +634,21 @@ def run_backtest(
     fac_ic_series: dict[str, list[float]] = {k: [] for k in factor_keys}
     fac_cov: dict[str, list[float]] = {k: [] for k in factor_keys}
     bench_rets: list[float] = []
+    spy_rets: list[float] = []
     decile_acc: list[list[float]] = [[] for _ in range(10)]
+    ls_sets: list[tuple[set[int], set[int]]] = []
+    universe_cov: list[float] = []
+    spy_col = col_idx.get("SPY")
 
     for k in range(len(rebal) - 1):
         i = rebal[k]
         j = rebal[k + 1]
         as_of = daily_idx[i].date()
+
+        members = sp500_members_asof(as_of)
+        member_mask = np.fromiter(
+            (t in members for t in cols), dtype=bool, count=n_names
+        )
 
         p_now = price_arr[i]
         p_21 = price_arr[i - 21]
@@ -648,10 +706,19 @@ def run_backtest(
                 activ[col_idx[t]] = v
 
         eligible = (
-            np.isfinite(p_now) & ~np.isnan(mom) & ~np.isnan(trend) & ~np.isnan(vol)
+            member_mask
+            & np.isfinite(p_now)
+            & ~np.isnan(mom)
+            & ~np.isnan(trend)
+            & ~np.isnan(vol)
         )
         if eligible.sum() < 50:
             continue
+        # Priced members / true members (names absent from the price matrix
+        # count against us): the honest residual-bias readout.
+        cov_month = float(np.isfinite(p_now[member_mask]).sum() / max(len(members), 1))
+        universe_cov.append(cov_month)
+        log.debug("%s: universe coverage %.1f%%", as_of, 100 * cov_month)
 
         def _ze(x: np.ndarray, e: np.ndarray = eligible) -> np.ndarray:
             return _zscore(np.where(e, x, np.nan))
@@ -676,6 +743,10 @@ def run_backtest(
         if bench_mask.sum() < 50:
             continue
         bench_rets.append(float(np.nanmean(fwd[bench_mask])))
+        if spy_col is not None:
+            spy_fwd = price_arr[j, spy_col] / p_now[spy_col] - 1.0
+            if np.isfinite(spy_fwd):
+                spy_rets.append(float(spy_fwd))
 
         # Per-factor IC + coverage (the ablation).
         n_elig = int(eligible.sum())
@@ -705,15 +776,24 @@ def run_backtest(
         valid = np.where(~np.isnan(sigs["cortex"]) & np.isfinite(fwd))[0]
         if len(valid) >= 100:
             order = valid[np.argsort(sigs["cortex"][valid])]
-            for d, ch in enumerate(np.array_split(order, 10)):
+            chunks = np.array_split(order, 10)
+            for d, ch in enumerate(chunks):
                 if len(ch):
                     decile_acc[d].append(float(np.mean([fwd[m] for m in ch])))
+            # Extreme-decile membership for L/S turnover costs (with ≥100
+            # valid names every chunk is non-empty, so this stays aligned
+            # with the decile_acc appends).
+            ls_sets.append((set(chunks[9].tolist()), set(chunks[0].tolist())))
 
     def _hit(strat: list[float]) -> float:
         wins = [1.0 if s > b else 0.0 for s, b in zip(strat, bench_rets, strict=False)]
         return float(np.mean(wins)) if wins else 0.0
 
     b_cagr, b_sharpe, _ = _annualize(bench_rets)
+    spy_cagr: float | None = None
+    spy_sharpe: float | None = None
+    if spy_rets:
+        spy_cagr, spy_sharpe, _ = _annualize(spy_rets)
     decile_cagr = [
         (np.prod([1 + r for r in d]) ** (12 / len(d)) - 1) if d else 0.0
         for d in decile_acc
@@ -757,17 +837,48 @@ def run_backtest(
         ls_monthly = [
             top - bot for top, bot in zip(decile_acc[9], decile_acc[0], strict=True)
         ]
+        # Net of turnover costs: 10 bps/side long leg, 25 bps/side short leg
+        # (extra 15 bps = disclosed borrow/locate assumption).
+        ls_net: list[float] = []
+        prev_top: set[int] = set()
+        prev_bot: set[int] = set()
+        for (top_set, bot_set), gross in zip(ls_sets, ls_monthly, strict=True):
+            turn_top = (
+                len(top_set ^ prev_top) / max(len(top_set), 1) if prev_top else 1.0
+            )
+            turn_bot = (
+                len(bot_set ^ prev_bot) / max(len(bot_set), 1) if prev_bot else 1.0
+            )
+            cost = turn_top * _COST_PER_SIDE + turn_bot * (
+                _COST_PER_SIDE + _SHORT_COST_EXTRA
+            )
+            ls_net.append(gross - cost)
+            prev_top, prev_bot = top_set, bot_set
         ls_mean, _, ls_t_nw = _series_stats(ls_monthly)
         ls_cagr, ls_sharpe, _ = _annualize(ls_monthly)
+        ls_mean_net, _, ls_t_nw_net = _series_stats(ls_net)
+        ls_cagr_net, ls_sharpe_net, _ = _annualize(ls_net)
         long_short = LongShortResult(
             mean_monthly=ls_mean,
             tstat_nw=ls_t_nw,
             cagr=ls_cagr,
             sharpe=ls_sharpe,
             n_months=len(ls_monthly),
+            mean_monthly_net=ls_mean_net,
+            tstat_nw_net=ls_t_nw_net,
+            cagr_net=ls_cagr_net,
+            sharpe_net=ls_sharpe_net,
         )
 
     factor_corr = _factor_corr(fac_ic_series, factor_keys)
+
+    cov_mean = float(np.mean(universe_cov)) if universe_cov else 0.0
+    cov_min = float(np.min(universe_cov)) if universe_cov else 0.0
+    log.info(
+        "Point-in-time universe coverage: mean %.1f%%, worst month %.1f%%",
+        100 * cov_mean,
+        100 * cov_min,
+    )
 
     return BacktestReport(
         start=daily_idx[rebal[0]].date(),
@@ -781,6 +892,10 @@ def run_backtest(
         factor_corr=factor_corr,
         n_tickers_requested=n_requested,
         n_tickers_priced=n_priced,
+        universe_coverage_mean=cov_mean,
+        universe_coverage_min=cov_min,
+        spy_cagr=spy_cagr,
+        spy_sharpe=spy_sharpe,
     )
 
 
@@ -795,6 +910,11 @@ class CongressOOSReport:
     365d window, gated on disclosure_date) must achieve OOS IC t-stat ≥ 3.0
     to claim an edge; t-stat ≥ 2.0 = "interesting, unconfirmed". No
     parameters were changed between in-sample and OOS.
+
+    Methodology corrections (2026-07-16, journaled in CHANGELOG): the verdict
+    keys off the Newey-West t-stat (the naive IID t is still reported), and
+    the universe is point-in-time S&P 500 membership. The 3.0/2.0 bars are
+    unchanged — these tighten the test, they don't move the goalposts.
     """
 
     insample_start: date
@@ -837,21 +957,14 @@ def run_congress_oos(
     Factor construction is identical to the main backtest — no tuning between
     periods.
     """
-    import yfinance as yf
+    from cortex.sources.prices import load_closes
+    from cortex.sources.universe import sp500_members_asof, sp500_union
 
-    from cortex.sources.universe import sp500_tickers
+    hist_start = date(start_year - 1, 1, 1)
+    tickers = sp500_union(hist_start)
+    log.info("Congress OOS universe: %d point-in-time members", len(tickers))
 
-    tickers = sp500_tickers()
-    log.info("Congress OOS universe: %d tickers", len(tickers))
-
-    raw: Any = yf.download(
-        tickers,
-        start=f"{start_year - 1}-01-01",
-        auto_adjust=True,
-        progress=False,
-        threads=True,
-    )
-    closes: Any = raw["Close"] if len(tickers) > 1 else raw[["Close"]]
+    closes: Any = load_closes(db_path, tickers, hist_start)
     closes = closes.dropna(how="all")
     cols = list(closes.columns)
     col_idx = {t: i for i, t in enumerate(cols)}
@@ -886,8 +999,12 @@ def run_congress_oos(
         if as_of.year < start_year:
             continue
 
+        members = sp500_members_asof(as_of)
+        member_mask = np.fromiter(
+            (t in members for t in cols), dtype=bool, count=n_names
+        )
         p_now = price_arr[i]
-        eligible = np.isfinite(p_now)
+        eligible = member_mask & np.isfinite(p_now)
         if eligible.sum() < 50:
             continue
 
@@ -932,16 +1049,20 @@ def run_congress_oos(
     port_cagr, port_sharpe, _ = _annualize(oos_port_rets)
     bench_cagr, bench_sharpe, _ = _annualize(oos_bench_rets)
 
-    if oos_tstat >= 3.0:
+    # Verdict keys off the Newey-West t-stat: monthly ICs are autocorrelated,
+    # and the naive IID t overstates significance exactly when it matters.
+    if oos_tstat_nw >= 3.0:
         verdict = (
-            "EDGE CONFIRMED — OOS IC t-stat ≥ 3.0 passes pre-registered threshold."
+            "EDGE CONFIRMED — OOS IC NW t-stat ≥ 3.0 passes pre-registered threshold."
         )
-    elif oos_tstat >= 2.0:
+    elif oos_tstat_nw >= 2.0:
         verdict = (
-            "INTERESTING but UNCONFIRMED — OOS IC t-stat ≥ 2.0, below the 3.0 bar."
+            "INTERESTING but UNCONFIRMED — OOS IC NW t-stat ≥ 2.0, below the 3.0 bar."
         )
     else:
-        verdict = "NO EDGE — OOS IC t-stat < 2.0; congress factor does not survive OOS."
+        verdict = (
+            "NO EDGE — OOS IC NW t-stat < 2.0; congress factor does not survive OOS."
+        )
 
     oos_start = date(insample_end_year + 1, 1, 1)
     is_start = date(start_year, 1, 1)
@@ -1000,17 +1121,66 @@ class HorizonResult:
     nw_tstat: float
     hit_rate: float  # fraction of events with positive CAR
     n: int
+    n_collapsed: int = 0  # same-ticker events dropped for window overlap
+
+
+# Market-model estimation: up to 252 trading days ending 30 days before the
+# event (the gap keeps pre-event drift out of the beta), minimum 120 obs.
+_BETA_WINDOW = 252
+_BETA_GAP = 30
+_BETA_MIN_OBS = 120
+
+
+def _estimate_market_model(
+    ret: np.ndarray, bench_ret: np.ndarray, event_idx: int, col: int
+) -> tuple[float, float] | None:
+    """OLS (alpha, beta) of a name on the benchmark over the pre-event window."""
+    hi = max(0, event_idx - _BETA_GAP)
+    lo = max(0, hi - _BETA_WINDOW)
+    x = bench_ret[lo:hi]
+    y = ret[lo:hi, col]
+    mask = np.isfinite(x) & np.isfinite(y)
+    if int(mask.sum()) < _BETA_MIN_OBS:
+        return None
+    xm = x[mask]
+    ym = y[mask]
+    var = float(np.var(xm))
+    if var <= 0:
+        return None
+    beta = float(np.cov(xm, ym)[0, 1] / var)
+    alpha = float(ym.mean() - beta * xm.mean())
+    return alpha, beta
+
+
+def _collapse_overlaps(event_idxs: list[int], span: int) -> tuple[list[int], int]:
+    """Keep the first of any same-ticker events whose windows would overlap.
+
+    ``span`` is the window length in trading days; two kept events are at
+    least ``span`` days apart so their CAR windows are disjoint.
+    """
+    kept: list[int] = []
+    dropped = 0
+    last = None
+    for e in sorted(event_idxs):
+        if last is not None and e - last < span:
+            dropped += 1
+            continue
+        kept.append(e)
+        last = e
+    return kept, dropped
 
 
 @dataclass
 class EventStudyReport:
-    """Results of the filing-gated event study.
+    """Results of the filing-gated event study. CARs are GROSS of costs.
 
-    Method: market-adjusted model — daily return minus equal-weight S&P 500
-    benchmark. No per-name beta estimation; CAPM-residual is a future upgrade.
-    Each event is treated independently: multiple purchases by the same ticker
-    in overlapping windows each contribute a separate observation (see Cohen
-    et al. 2012 for a clustered alternative).
+    Method: market model by default — per-name (alpha, beta) estimated on a
+    pre-event window against the equal-weight benchmark; abnormal return =
+    r − (α + β·r_mkt). Falls back to the market-adjusted model (r − r_mkt)
+    for events without a sufficient estimation window (``n_no_beta`` counts
+    them). Overlapping same-ticker events are collapsed per horizon — only
+    the first of any events whose windows would overlap is kept (Cohen et
+    al. 2012 clustering concern; ``n_collapsed`` per horizon discloses it).
     """
 
     signal: str
@@ -1019,6 +1189,8 @@ class EventStudyReport:
     n_skipped: int  # ticker missing from price data, or event past data end
     horizons: list[HorizonResult]
     placebo: HorizonResult  # (-5, -1) pre-event leakage check
+    market_model: bool = True
+    n_no_beta: int = 0  # events that fell back to market-adjusted
 
 
 def run_event_study(
@@ -1026,15 +1198,18 @@ def run_event_study(
     *,
     signal: str,
     from_year: int = 2017,
+    market_model: bool = True,
 ) -> EventStudyReport:
     """Compute cumulative abnormal return (CAR) around filing-gated events.
 
-    Downloads daily adjusted closes via yfinance (no SEC credentials required).
+    Daily adjusted closes come from the DuckDB price cache. See
+    :class:`EventStudyReport` for the abnormal-return model and the
+    overlapping-event collapse.
     """
     import pandas as pd
-    import yfinance as yf
 
-    from cortex.sources.universe import sp500_tickers
+    from cortex.sources.prices import load_closes
+    from cortex.sources.universe import sp500_union
 
     if signal == "insider":
         all_events = _load_insider_events(db_path)
@@ -1058,15 +1233,10 @@ def run_event_study(
         from_year,
     )
 
-    tickers = sp500_tickers()
-    raw: Any = yf.download(
-        tickers,
-        start=f"{from_year - 1}-01-01",
-        auto_adjust=True,
-        progress=False,
-        threads=True,
-    )
-    closes: Any = raw["Close"] if len(tickers) > 1 else raw[["Close"]]
+    # Union of point-in-time members so events on later-delisted names are
+    # not silently skipped when a source can price them.
+    tickers = sp500_union(date(from_year - 1, 1, 1))
+    closes: Any = load_closes(db_path, tickers, date(from_year - 1, 1, 1))
     closes = closes.dropna(how="all")
     cols = list(closes.columns)
     col_idx = {t: i for i, t in enumerate(cols)}
@@ -1083,12 +1253,11 @@ def run_event_study(
         warnings.simplefilter("ignore", category=RuntimeWarning)
         bench_ret = np.nanmean(ret, axis=1)  # [days]
 
-    ar = ret - bench_ret[:, np.newaxis]  # [days, names]
+    ar_ma = ret - bench_ret[:, np.newaxis]  # market-adjusted [days, names]
 
-    cars_by_horizon: dict[tuple[int, int], list[float]] = {h: [] for h in _HORIZONS}
-    cars_placebo: list[float] = []
+    # Group event day-indices by ticker so overlaps can be collapsed.
+    by_ticker: dict[str, list[int]] = {}
     n_skipped = 0
-
     for ev in events:
         col = col_idx.get(ev.ticker)
         if col is None:
@@ -1098,39 +1267,62 @@ def run_event_study(
         if e >= len(daily_idx):
             n_skipped += 1
             continue
+        by_ticker.setdefault(ev.ticker, []).append(e)
 
-        pl = _car_window(ar, e, col, *_PLACEBO_WINDOW)
-        if pl is not None:
-            cars_placebo.append(pl)
+    n_no_beta = 0
+    windows = [_PLACEBO_WINDOW, *_HORIZONS]
+    cars: dict[tuple[int, int], list[float]] = {w: [] for w in windows}
+    collapsed: dict[tuple[int, int], int] = {w: 0 for w in windows}
 
-        for h in _HORIZONS:
-            car = _car_window(ar, e, col, *h)
-            if car is not None:
-                cars_by_horizon[h].append(car)
+    for ticker, idxs in by_ticker.items():
+        col = col_idx[ticker]
+        # One abnormal-return series per event (beta is event-specific).
+        ar_by_event: dict[int, np.ndarray] = {}
+        for e in dict.fromkeys(idxs):
+            series = None
+            if market_model:
+                mm = _estimate_market_model(ret, bench_ret, e, col)
+                if mm is not None:
+                    a, b = mm
+                    series = ret[:, col] - (a + b * bench_ret)
+                else:
+                    n_no_beta += 1
+            if series is None:
+                series = ar_ma[:, col]
+            ar_by_event[e] = series
+        for w in windows:
+            span = w[1] - w[0] + 1
+            kept, dropped = _collapse_overlaps(idxs, span)
+            collapsed[w] += dropped
+            for e in kept:
+                car = _car_window(ar_by_event[e][:, np.newaxis], e, 0, *w)
+                if car is not None:
+                    cars[w].append(car)
 
-    def _to_horizon(h: tuple[int, int], cars: list[float]) -> HorizonResult:
-        if not cars:
-            return HorizonResult(h[0], h[1], 0.0, 0.0, 0.0, 0)
-        arr = np.array(cars)
+    def _to_horizon(h: tuple[int, int]) -> HorizonResult:
+        vals = cars[h]
+        if not vals:
+            return HorizonResult(h[0], h[1], 0.0, 0.0, 0.0, 0, collapsed[h])
+        arr = np.array(vals)
         return HorizonResult(
             w_start=h[0],
             w_end=h[1],
             mean_car=float(arr.mean()),
-            nw_tstat=_nw_tstat(cars),
+            nw_tstat=_nw_tstat(vals),
             hit_rate=float((arr > 0).mean()),
-            n=len(cars),
+            n=len(vals),
+            n_collapsed=collapsed[h],
         )
-
-    placebo = _to_horizon(_PLACEBO_WINDOW, cars_placebo)
-    horizons = [_to_horizon(h, cars_by_horizon[h]) for h in _HORIZONS]
 
     return EventStudyReport(
         signal=signal,
         from_year=from_year,
         n_events_total=len(events),
         n_skipped=n_skipped,
-        horizons=horizons,
-        placebo=placebo,
+        horizons=[_to_horizon(h) for h in _HORIZONS],
+        placebo=_to_horizon(_PLACEBO_WINDOW),
+        market_model=market_model,
+        n_no_beta=n_no_beta,
     )
 
 
@@ -1150,16 +1342,19 @@ def run_event_study_daily(
     signal: str,
     from_year: int = 2017,
     max_day: int = 120,
+    market_model: bool = True,
 ) -> list[DailyCARPoint]:
     """Day-by-day mean CAR trajectory for a filing-gated signal (days 0..max_day).
 
     Only events that have a complete max_day window (no NaN, not past data end)
-    are included, so every day in the trajectory averages over the same event set.
+    are included, so every day in the trajectory averages over the same event
+    set. Abnormal returns use the market model (market-adjusted fallback per
+    event); overlapping same-ticker events are collapsed to the first.
     """
     import pandas as pd
-    import yfinance as yf
 
-    from cortex.sources.universe import sp500_tickers
+    from cortex.sources.prices import load_closes
+    from cortex.sources.universe import sp500_union
 
     if signal == "insider":
         all_events = _load_insider_events(db_path)
@@ -1179,15 +1374,10 @@ def run_event_study_daily(
     if not events:
         return []
 
-    tickers = sp500_tickers()
-    raw: Any = yf.download(
-        tickers,
-        start=f"{from_year - 1}-01-01",
-        auto_adjust=True,
-        progress=False,
-        threads=True,
-    )
-    closes: Any = raw["Close"] if len(tickers) > 1 else raw[["Close"]]
+    # Union of point-in-time members so events on later-delisted names are
+    # not silently skipped when a source can price them.
+    tickers = sp500_union(date(from_year - 1, 1, 1))
+    closes: Any = load_closes(db_path, tickers, date(from_year - 1, 1, 1))
     closes = closes.dropna(how="all")
     col_idx = {t: i for i, t in enumerate(closes.columns)}
     price_arr = closes.to_numpy()
@@ -1199,9 +1389,11 @@ def run_event_study_daily(
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", category=RuntimeWarning)
         bench_ret = np.nanmean(ret, axis=1)
-    ar = ret - bench_ret[:, np.newaxis]
+    ar_ma = ret - bench_ret[:, np.newaxis]
 
-    cum_cars: list[np.ndarray] = []
+    # Group by ticker and collapse events whose max_day windows overlap, so
+    # one name's purchase cluster doesn't stack near-duplicate trajectories.
+    by_ticker: dict[str, list[int]] = {}
     for ev in events:
         col = col_idx.get(ev.ticker)
         if col is None:
@@ -1209,10 +1401,25 @@ def run_event_study_daily(
         e = int(daily_idx.searchsorted(pd.Timestamp(ev.when)))
         if e + max_day >= len(daily_idx):
             continue
-        window = ar[e : e + max_day + 1, col]
-        if len(window) < max_day + 1 or not np.all(np.isfinite(window)):
-            continue
-        cum_cars.append(np.cumsum(window))
+        by_ticker.setdefault(ev.ticker, []).append(e)
+
+    cum_cars: list[np.ndarray] = []
+    for ticker, idxs in by_ticker.items():
+        col = col_idx[ticker]
+        kept, _ = _collapse_overlaps(idxs, max_day + 1)
+        for e in kept:
+            series = None
+            if market_model:
+                mm = _estimate_market_model(ret, bench_ret, e, col)
+                if mm is not None:
+                    a, b = mm
+                    series = ret[:, col] - (a + b * bench_ret)
+            if series is None:
+                series = ar_ma[:, col]
+            window = series[e : e + max_day + 1]
+            if len(window) < max_day + 1 or not np.all(np.isfinite(window)):
+                continue
+            cum_cars.append(np.cumsum(window))
 
     if not cum_cars:
         return []

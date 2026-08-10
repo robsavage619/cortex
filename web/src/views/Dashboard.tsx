@@ -680,6 +680,7 @@ const _STALE_AFTER: Record<string, number> = {
   discover: 36 * 3600,
   volatility: 36 * 3600,
   funds: 10 * 24 * 3600, // weekly cron + slack
+  executive: 36 * 3600, // daily cron + slack
 }
 
 function fmtAge(seconds: number | null): string {

@@ -95,12 +95,10 @@ def _synthetic_price_data(tickers: list[str]) -> dict[str, dict[str, Any]]:
 @pytest.fixture
 def discovery_env(tmp_path, monkeypatch):
     tickers = [f"TK{i:02d}" for i in range(20)] + ["BELOWTREND"]
-    monkeypatch.setattr(
-        "cortex.sources.universe.sp500_tickers", lambda: list(tickers)
-    )
+    monkeypatch.setattr("cortex.sources.universe.sp500_tickers", lambda: list(tickers))
     monkeypatch.setattr(
         "cortex.discovery._compute_price_factors",
-        lambda ts: _synthetic_price_data(ts),
+        lambda db, ts: _synthetic_price_data(ts),
     )
     monkeypatch.setattr(
         "cortex.discovery._pit_fundamentals",
@@ -182,9 +180,7 @@ def test_store_load_round_trip(discovery_env):
     loaded = list_candidates(db)
     assert [c.ticker for c in loaded] == [c.ticker for c in stored]
     assert [c.forced for c in loaded] == [c.forced for c in stored]
-    assert [c.composite_rank for c in loaded] == [
-        c.composite_rank for c in stored
-    ]
+    assert [c.composite_rank for c in loaded] == [c.composite_rank for c in stored]
 
 
 def test_rank_stability_across_reruns(discovery_env):

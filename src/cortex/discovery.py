@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -67,52 +67,36 @@ def _zscore_series(values: dict[str, float | None]) -> dict[str, float | None]:
 # ── Price-based factor computation ────────────────────────────────────────────
 
 
-# Batch size for yfinance bulk downloads. Downloading the whole S&P 500 in one
-# call builds a ~500-column float64 DataFrame whose concat peak OOM-kills a small
-# instance; 50-ticker batches keep peak memory flat and are released between batches.
-_PRICE_BATCH = 50
+# Calendar days of history needed for momentum 12-1 and the 200d SMA
+# (~13 months of trading days plus weekend/holiday slack).
+_PRICE_LOOKBACK_DAYS = 400
 
 
 def _compute_price_factors(
+    db_path: Path,
     tickers: list[str],
 ) -> dict[str, dict[str, Any]]:
-    """Download 13 months of daily close prices and compute price-based factors.
+    """Load ~13 months of adjusted closes from the price cache, compute factors.
 
-    Downloads in :data:`_PRICE_BATCH`-sized batches so peak memory stays flat
-    regardless of universe size. Returns a dict keyed by ticker with keys:
-        momentum_12_1, vol_252d, sharpe_12m, above_200d_sma
+    The cache tops up only the missing tail (staleness 0 — a live screen must
+    see the latest close). Returns a dict keyed by ticker with keys:
+        momentum_12_1, vol_252d, sharpe_12m, above_200d_sma, trend_200d,
+        last_close
     """
-    import gc
-
-    log.info("Downloading price data for %d tickers (13mo, batched)…", len(tickers))
-    results: dict[str, dict[str, Any]] = {}
-    for start in range(0, len(tickers), _PRICE_BATCH):
-        results.update(_price_factors_batch(tickers[start : start + _PRICE_BATCH]))
-        gc.collect()
-    return results
-
-
-def _price_factors_batch(tickers: list[str]) -> dict[str, dict[str, Any]]:
-    """Compute price factors for one batch of tickers (see _compute_price_factors)."""
     import numpy as np
-    import yfinance as yf
 
-    raw: Any = yf.download(
+    from cortex.sources.prices import load_closes
+
+    log.info("Loading price data for %d tickers (13mo, cached)…", len(tickers))
+    closes = load_closes(
+        db_path,
         tickers,
-        period="13mo",
-        auto_adjust=True,
-        progress=False,
-        threads=True,
+        date.today() - timedelta(days=_PRICE_LOOKBACK_DAYS),
+        max_staleness_days=0,
     )
-
-    # yf.download returns MultiIndex columns when >1 ticker, single-level when 1
-    if len(tickers) == 1:
-        closes = raw[["Close"]].rename(columns={"Close": tickers[0]})
-    else:
-        closes = raw["Close"]
-    # float32 halves resident price memory; factor math tolerates it fine.
-    closes = closes.astype("float32")
-    del raw
+    if not closes.empty:
+        # float32 halves resident price memory; factor math tolerates it fine.
+        closes = closes.astype("float32")
 
     results: dict[str, dict[str, Any]] = {}
     for ticker in tickers:
@@ -424,7 +408,7 @@ def run_discovery(
     log.info("Universe: %d tickers", len(tickers))
 
     # ── Stage 1: price factors ────────────────────────────────────────────────
-    price_data = _compute_price_factors(tickers)
+    price_data = _compute_price_factors(db_path, tickers)
 
     # ── Stage 2: hard trend gate ──────────────────────────────────────────────
     # Below-200d-SMA stocks are excluded from the live list (conservatism);

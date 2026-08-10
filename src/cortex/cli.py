@@ -360,8 +360,8 @@ def _cmd_event_study(args: argparse.Namespace) -> None:
     print()
     print("=" * 80)
     print(f"EVENT-STUDY: {signal_label}  from_year={rep.from_year}")
-    print("Market-adjusted CAR (EW S&P 500 benchmark; no beta estimation).")
-    print("Each filing treated as an independent event.")
+    print("Market-model CAR (per-name beta vs EW S&P 500; market-adjusted fallback).")
+    print("Overlapping same-ticker events collapsed per horizon. CARs are GROSS.")
     print("=" * 80)
     print()
     pl = rep.placebo
@@ -377,17 +377,19 @@ def _cmd_event_study(args: argparse.Namespace) -> None:
         print(
             f"  ({h.w_start:+d},+{h.w_end:d}): "
             f"CAR={h.mean_car:+.2%}  NW t={h.nw_tstat:+.2f}  "
-            f"hit={h.hit_rate:.0%}  n={h.n}"
+            f"hit={h.hit_rate:.0%}  n={h.n}  (collapsed {h.n_collapsed})"
         )
     print()
     print(
         f"  {rep.n_skipped} events skipped (ticker absent from price data "
-        "or event past data end)"
+        "or event past data end);"
     )
+    print(f"  {rep.n_no_beta} fell back to market-adjusted (thin beta window)")
     print()
     print("  CAVEATS:")
-    print("  - Universe survivorship bias: current S&P 500 members only")
-    print("  - Market-adjusted model only (no beta); CAPM-residual is a future upgrade")
+    print("  - Universe = point-in-time S&P 500 members; residual delisting bias")
+    print("    only where no source can price a dead ticker")
+    print("  - CARs are GROSS of transaction costs")
     print(
         f"  - Sparse: {rep.n_events_total} events across ~503 names "
         f"({rep.from_year}→now)"
@@ -405,7 +407,7 @@ def _cmd_congress_oos(args: argparse.Namespace) -> None:
     print("=" * 80)
     print("PRE-REGISTERED CONGRESS OOS TEST")
     print("Hypothesis: congress net-buy factor (180d hl / 365d window / disclosure-")
-    print("gated) predicts 1-month fwd returns. Pass: OOS IC t-stat ≥ 3.0.")
+    print("gated) predicts 1-month fwd returns. Pass: OOS IC NW t-stat ≥ 3.0.")
     print("=" * 80)
     rep = run_congress_oos(
         settings.duckdb_path,
@@ -437,9 +439,10 @@ def _cmd_congress_oos(args: argparse.Namespace) -> None:
         f"  Sharpe={rep.oos_benchmark_sharpe:.2f}"
     )
     print()
-    print("  CAVEATS: universe = current S&P500 (survivorship-biased, results")
+    print("  CAVEATS: universe = point-in-time S&P500 membership (residual delisting")
     print(
-        f"  upward-biased). Congress covers ~{rep.oos_coverage:.0%} of names (sparse)."
+        f"  bias only where dead tickers are unpriceable). "
+        f"Congress covers ~{rep.oos_coverage:.0%} of names (sparse)."
     )
     print()
     print(f"  VERDICT: {rep.verdict}")
@@ -470,6 +473,11 @@ def _cmd_backtest(args: argparse.Namespace) -> None:
         f"  {'BENCHMARK (EW S&P500)':30} "
         f"CAGR={rep.benchmark_cagr:+.1%}  Sharpe={rep.benchmark_sharpe:.2f}"
     )
+    if rep.spy_cagr is not None and rep.spy_sharpe is not None:
+        print(
+            f"  {'SPY (cap-weighted reality)':30} "
+            f"CAGR={rep.spy_cagr:+.1%}  Sharpe={rep.spy_sharpe:.2f}"
+        )
     print("  " + "-" * 76)
     for s in rep.variants:
         print(
@@ -492,8 +500,14 @@ def _cmd_backtest(args: argparse.Namespace) -> None:
         ls = rep.long_short
         print("  LONG-SHORT SPREAD (CORTEX D10 − D1, beta-stripped factor return):")
         print(
-            f"    mean monthly={ls.mean_monthly:+.4%}  NW t={ls.tstat_nw:.2f}  "
+            f"    GROSS mean monthly={ls.mean_monthly:+.4%}  NW t={ls.tstat_nw:.2f}  "
             f"CAGR={ls.cagr:+.1%}  Sharpe={ls.sharpe:.2f}  n={ls.n_months}"
+        )
+        print(
+            f"    NET   mean monthly={ls.mean_monthly_net:+.4%}  "
+            f"NW t={ls.tstat_nw_net:.2f}  "
+            f"CAGR={ls.cagr_net:+.1%}  Sharpe={ls.sharpe_net:.2f}  "
+            "(10bps/side long, 25bps/side short)"
         )
         print()
     if rep.factor_corr is not None:
@@ -530,7 +544,11 @@ def _cmd_backtest(args: argparse.Namespace) -> None:
         "  should be positive and deciles rise monotonically; a flow factor earns its"
     )
     print("  place only if its IC is weakly correlated with momentum/trend. CAVEATS:")
-    print("  universe = CURRENT S&P500 (survivorship-biased → results upward-biased).")
+    print(
+        f"  universe = point-in-time S&P500 membership; priced coverage mean "
+        f"{rep.universe_coverage_mean:.0%}, worst month {rep.universe_coverage_min:.0%}"
+    )
+    print("  (the gap is residual delisting bias — measured, not hidden).")
     print("  Net 10bps/side, rf=0. Value/quality via point-in-time EDGAR filings.")
     print("=" * 80)
 
@@ -547,7 +565,7 @@ def _cmd_serve(args: argparse.Namespace) -> None:
 
 
 def _cmd_sync_all(args: argparse.Namespace) -> None:
-    """Run the full refresh (congress → funds → discover → volatility).
+    """Run the full refresh (congress → funds → fundamentals → discover → volatility).
 
     Invoked as an isolated subprocess by the API so a sync OOM can't take down
     the web server. Streams progress to the status JSON on the volume. With
@@ -558,9 +576,7 @@ def _cmd_sync_all(args: argparse.Namespace) -> None:
     from cortex.sync_job import run_full_sync
 
     settings = load_settings()
-    only = (
-        [s.strip() for s in args.only.split(",") if s.strip()] if args.only else None
-    )
+    only = [s.strip() for s in args.only.split(",") if s.strip()] if args.only else None
     run_full_sync(settings.duckdb_path, only=only)
 
 
@@ -585,9 +601,7 @@ def _cmd_trigger_refresh(args: argparse.Namespace) -> None:
     auth = (user, pw) if user else None
 
     try:
-        resp = httpx.post(
-            f"{base}/refresh", params=params, auth=auth, timeout=30.0
-        )
+        resp = httpx.post(f"{base}/refresh", params=params, auth=auth, timeout=30.0)
         resp.raise_for_status()
     except httpx.HTTPError as exc:
         print(f"trigger-refresh failed: {exc}", flush=True)
@@ -652,7 +666,16 @@ def _cmd_snapshot_factors(args: argparse.Namespace) -> None:
     n_months = rep.variants[0].n_months if rep.variants else None
 
     rows = [
-        (today, f.factor, f.mean_ic, f.ic_tstat, f.ic_tstat_nw, f.coverage, n_months)
+        (
+            today,
+            f.factor,
+            f.mean_ic,
+            f.ic_tstat,
+            f.ic_tstat_nw,
+            f.coverage,
+            n_months,
+            rep.universe_coverage_mean,
+        )
         for f in rep.factor_ics
     ]
     with connect(settings.duckdb_path) as conn:
@@ -662,12 +685,14 @@ def _cmd_snapshot_factors(args: argparse.Namespace) -> None:
                 """
                 INSERT INTO factor_history
                   (snapshot_date, factor, ic_mean, ic_tstat, ic_tstat_nw,
-                   coverage, n_months)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                   coverage, n_months, universe_coverage)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT (snapshot_date, factor) DO UPDATE SET
                   ic_mean = excluded.ic_mean, ic_tstat = excluded.ic_tstat,
                   ic_tstat_nw = excluded.ic_tstat_nw, coverage = excluded.coverage,
-                  n_months = excluded.n_months, recorded_at = now()
+                  n_months = excluded.n_months,
+                  universe_coverage = excluded.universe_coverage,
+                  recorded_at = now()
                 """,
                 list(r),
             )
@@ -689,9 +714,7 @@ def _cmd_trigger_snapshot(args: argparse.Namespace) -> None:
     pw = os.environ.get("CORTEX_AUTH_PASS", "")
     auth = (user, pw) if user else None
     try:
-        resp = httpx.post(
-            f"{base}/admin/snapshot-factors", auth=auth, timeout=30.0
-        )
+        resp = httpx.post(f"{base}/admin/snapshot-factors", auth=auth, timeout=30.0)
         resp.raise_for_status()
     except httpx.HTTPError as exc:
         print(f"trigger-snapshot failed: {exc}", flush=True)
@@ -977,7 +1000,10 @@ def main() -> None:
         "--only",
         default=None,
         metavar="SOURCES",
-        help="Comma-separated subset to run (congress,funds,discover,volatility)",
+        help=(
+            "Comma-separated subset to run "
+            "(congress,funds,fundamentals,discover,volatility,executive)"
+        ),
     )
 
     trig_p = sub.add_parser(
@@ -994,7 +1020,10 @@ def main() -> None:
         "--only",
         default=None,
         metavar="SOURCES",
-        help="Comma-separated subset to refresh (congress,funds,discover,volatility)",
+        help=(
+            "Comma-separated subset to refresh "
+            "(congress,funds,fundamentals,discover,volatility,executive)"
+        ),
     )
 
     snap_p = sub.add_parser(
