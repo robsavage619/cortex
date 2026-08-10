@@ -96,7 +96,27 @@ def _amount_midpoint(amount: str) -> float:
 
 
 def _congress_sign(transaction_type: str) -> int:
-    t = (transaction_type or "").lower()
+    """Map a disclosure's transaction type to a buy/sell/ignore sign.
+
+    The two chambers do not speak the same language. Senate eFD writes English
+    ("Purchase", "Sale (Full)"); House PTRs carry SEC single-letter codes
+    ("P", "S", "S (partial)"). Handling only the Senate form silently zeroed
+    roughly 14,300 of 14,551 House rows.
+
+    The code form is tested first and on the leading token only: a bare "s"
+    must not fall through to the substring test, and "p" must not match the
+    "partial" in "S (partial)".
+    """
+    t = (transaction_type or "").strip().lower()
+    if not t:
+        return 0
+    code = t.split()[0].rstrip(".")
+    if code == "p":
+        return 1
+    if code == "s":
+        return -1
+    if code == "e":  # exchange — neither a buy nor a sell
+        return 0
     if "purchase" in t:
         return 1
     if "sale" in t:

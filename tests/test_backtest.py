@@ -37,6 +37,32 @@ def test_congress_sign():
     assert _congress_sign("Exchange") == 0
 
 
+def test_congress_sign_handles_house_letter_codes():
+    """House PTRs use SEC single-letter codes, not the Senate's English words.
+
+    Handling only the Senate form zeroed ~14,300 of 14,551 House rows, which is
+    why backfilling the House left the congress factor byte-for-byte unchanged.
+    """
+    assert _congress_sign("P") == 1
+    assert _congress_sign("S") == -1
+    assert _congress_sign("S (partial)") == -1
+    assert _congress_sign("s (partial)") == -1
+    assert _congress_sign("s") == -1
+    assert _congress_sign("E") == 0
+    assert _congress_sign("PURCHASE") == 1
+    assert _congress_sign("Sale") == -1
+
+
+def test_congress_sign_ignores_unparseable():
+    assert _congress_sign("") == 0
+    assert _congress_sign(None) == 0  # type: ignore[arg-type]
+    assert _congress_sign("   ") == 0
+    # "p" must not match the "partial" in a sale, and a bare "s" must not fall
+    # through to the substring test and miss
+    assert _congress_sign("S (partial)") == -1
+    assert _congress_sign("Exchange") == 0
+
+
 def test_fundamental_asof_is_point_in_time():
     """Only filings disclosed on/before as_of count; latest per ticker wins."""
     funds = [
