@@ -1210,6 +1210,47 @@ def get_case(ticker: str) -> dict[str, Any]:
     }
 
 
+@app.get("/research/factor/{factor}")
+def research_factor(factor: str) -> dict[str, Any]:
+    """Everything the vault says about one CORTEX factor.
+
+    Answers "should I believe this number?" rather than "what is momentum?" —
+    the link comes from each note's `cortex_factors` frontmatter, so writing a
+    note and re-running `cortex rag-index` is the whole update path.
+    """
+    from cortex.evidence import caveats_for, evidence_for
+
+    items = evidence_for(_db(), factor)
+    # Factor-specific caveats only. Methodology findings tagged for every
+    # factor are real caveats but global ones, and mixing them here would bury
+    # "distrust THIS number" under "distrust all numbers".
+    specific = caveats_for(_db(), factor)
+    return {
+        "banner": _BANNER,
+        "factor": factor.lower(),
+        "caveats": [
+            {
+                "wikilink": e.wikilink,
+                "title": e.title,
+                "verdict": e.verdict,
+                "confidence": e.confidence,
+            }
+            for e in specific
+        ],
+        "evidence": [
+            {
+                "wikilink": e.wikilink,
+                "title": e.title,
+                "summary": e.summary,
+                "kind": e.kind,
+                "confidence": e.confidence,
+                "applies_to_all": e.factor == "*",
+            }
+            for e in items
+        ],
+    }
+
+
 @app.get("/research/ticker/{ticker}")
 def research_ticker(ticker: str, k: int = 2) -> dict[str, Any]:
     """Surface vault research that explains why each CORTEX factor matters.
@@ -1230,10 +1271,24 @@ def research_ticker(ticker: str, k: int = 2) -> dict[str, Any]:
         by_factor[factor] = [
             {"wikilink": c.wikilink, "tier": c.tier, "text": c.text} for c in chunks
         ]
+    # Additive field: the vault's first-party caveats for the factors shown
+    # here. `by_factor` is unchanged so the existing UI contract still holds.
+    from cortex.evidence import caveats_for
+
+    caveats: dict[str, list[dict[str, Any]]] = {}
+    for factor in _FACTOR_QUERIES:
+        found = caveats_for(_db(), factor)
+        if found:
+            caveats[factor] = [
+                {"wikilink": c.wikilink, "title": c.title, "verdict": c.verdict}
+                for c in found
+            ]
+
     return {
         "banner": _BANNER,
         "ticker": ticker.upper(),
         "by_factor": by_factor,
+        "caveats": caveats,
         "error": error,
     }
 

@@ -104,6 +104,7 @@ def _cmd_mirror(args: argparse.Namespace) -> None:  # noqa: ARG001
 
 def _cmd_rag_index(args: argparse.Namespace) -> None:  # noqa: ARG001
     from cortex.config import load_settings
+    from cortex.evidence import sync_evidence
     from cortex.rag import RESEARCH_TAGS, index_vault
 
     settings = load_settings()
@@ -123,6 +124,8 @@ def _cmd_rag_index(args: argparse.Namespace) -> None:  # noqa: ARG001
         )
         raise SystemExit(1)
     print(f"Indexed {n} chunks from {settings.research_dir}")
+    links = sync_evidence(settings.duckdb_path, settings.research_dir)
+    print(f"Linked {links} factor-evidence rows from `cortex_factors` frontmatter")
 
 
 def _cmd_discover(args: argparse.Namespace) -> None:
@@ -555,6 +558,23 @@ def _cmd_backtest(args: argparse.Namespace) -> None:
             f"{f.bottom_decile_excess:>+7.2%}{flag}"
         )
     print()
+    try:
+        from cortex.config import load_settings as _ls2
+        from cortex.evidence import caveats_for
+
+        _db = _ls2().duckdb_path
+        flagged = [(f.factor, caveats_for(_db, f.factor)) for f in rep.factor_ics]
+        flagged = [(name, cs) for name, cs in flagged if cs]
+        if flagged:
+            print("  KNOWN CAVEATS (first-party findings from the vault):")
+            for name, cs in flagged:
+                for c in cs:
+                    print(f"   {name:10} {c.verdict}")
+                    print(f"   {'':10} {c.wikilink}")
+            print()
+    except Exception as exc:  # noqa: BLE001 - never fail a report on annotation
+        print(f"  (factor evidence unavailable: {exc})", file=sys.stderr)
+
     if rep.long_short is not None:
         ls = rep.long_short
         print("  LONG-SHORT SPREAD (CORTEX D10 − D1, beta-stripped factor return):")

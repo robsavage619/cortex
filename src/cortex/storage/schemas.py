@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import duckdb
 
-SCHEMA_VERSION = 21
+SCHEMA_VERSION = 22
 
 DDL_STATEMENTS = (
     """
@@ -261,6 +261,21 @@ DDL_STATEMENTS = (
     -- per-run test count is not it: 13 configurations in one run is one
     -- research decision, whereas 40 runs over a month is 40 chances to have
     -- found something by luck.
+    -- Which vault notes bear on which factor. Rebuilt wholesale from the
+    -- vault by `cortex rag-index`; synced rather than read live because the
+    -- deployed app has no vault on disk.
+    CREATE TABLE IF NOT EXISTS factor_evidence (
+        factor     VARCHAR   NOT NULL,
+        wikilink   VARCHAR   NOT NULL,
+        title      VARCHAR   NOT NULL,
+        summary    VARCHAR,
+        kind       VARCHAR,
+        confidence VARCHAR,
+        verdict    VARCHAR,
+        synced_at  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+    """,
+    """
     CREATE TABLE IF NOT EXISTS research_trials (
         id           INTEGER   PRIMARY KEY,
         ran_at       TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,

@@ -76,6 +76,14 @@ Single user (Rob). Not a product. Optimise for research iteration speed.
 - `splits` / `split_coverage` (schema v19) — coverage is tracked per ticker because "no splits ever" and "never fetched" are otherwise indistinguishable; `_load_fundamentals` reads the cache only, never the network, so backtests stay reproducible
 - All sync commands are idempotent via `ON CONFLICT (id) DO NOTHING`
 
+## Vault → factor evidence link (post-2026-08-10)
+- A vault note declares which factors it bears on with `cortex_factors:` frontmatter — `[fund]`, `[fund, congress]`, or `["*"]` for methodology that applies to every factor
+- **The wildcard MUST be quoted.** `cortex_factors: [*]` is a YAML alias token and raises; an unquoted one silently drops the note from BOTH the evidence map and the RAG index. There is a regression test for exactly this
+- Notes typed `research-finding` with a `current_verdict` are treated as **caveats** and printed next to the factor's number in `cortex backtest`. A citation rarely changes a decision; a caveat does
+- `caveats_for()` excludes wildcard notes deliberately — a global methodology finding is a real caveat but surfacing it per-factor buries "distrust this number" under "distrust all numbers"
+- Synced into DuckDB (`factor_evidence`, schema v22) by `cortex rag-index`, not read live, because the deployed app has no vault on disk. Write a note, re-run rag-index — that is the whole update path
+- `GET /research/factor/{factor}` returns caveats + all evidence for one factor. `/research/ticker/{ticker}` gained an additive `caveats` field; `by_factor` is unchanged so the existing UI contract holds
+
 ## Vault RAG (post-2026-08-10)
 - Two separate trees: `settings.vault_dir` (`savage_vault/investing/`) is where CORTEX **writes** its mirror; `settings.research_dir` (`savage_vault/wiki/`) is where it **reads** notes to embed. They are not the same directory and never were — the old default pointed research at `investing/research`, which has never existed, so `rag-index` was a silent no-op for months while the retriever served a 2026-05-23 index
 - `index_vault` filters on `rag.RESEARCH_TAGS` against each note's frontmatter `tags`/`domains`. The vault is a general knowledge base; without the filter the finance corpus (~39 notes) is buried under exercise science and sabermetrics. **A new finance note must be tagged `quantitative-finance` (or another allowlist tag) or the retriever will never see it**
