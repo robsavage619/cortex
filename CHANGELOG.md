@@ -6,6 +6,204 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Vault → factor evidence link (2026-08-10, schema v22)
+
+The RAG retriever could answer "what does the corpus say about momentum?" — good
+for browsing, useless at the moment of decision, because it was attached to
+nothing. `/research/ticker/AAPL` and `/research/ticker/XOM` returned
+byte-identical snippets. A reader looking at `fund 2.62` had no way to learn
+from the app that 74% of that factor is one manager.
+
+A vault note now declares what it bears on:
+
+```yaml
+cortex_factors: [fund]        # evidence about the fund factor
+cortex_factors: ["*"]         # methodology, applies to every factor
+```
+
+Notes typed `research-finding` carrying a `current_verdict` are treated as
+**caveats** and printed under the ablation table:
+
+```
+KNOWN CAVEATS (first-party findings from the vault):
+ congress   fragile — 1.72 raw collapses to 1.13 on a log scale
+ fund       structural concern; no change made, pre-registration candidate
+ insider    blocked — needs S-coded Form 4 ingestion before the fix is testable
+ short      evaluated 2026-08-10 — NW t 1.87, falsifier survived, not promoted
+```
+
+A citation rarely changes a decision; a caveat does. `caveats_for()` excludes
+wildcard notes deliberately — a global methodology finding is a real caveat, but
+surfacing it per-factor buries "distrust this number" under "distrust all
+numbers".
+
+Synced into DuckDB by `cortex rag-index` rather than read live, because the
+deployed app has no vault on disk. Also adds `GET /research/factor/{factor}`;
+`/research/ticker/{ticker}` gains an additive `caveats` field with `by_factor`
+unchanged so the existing web contract holds.
+
+**Trap worth recording:** `cortex_factors: [*]` unquoted is a YAML alias token
+that raises, silently dropping the note from the evidence map *and* the RAG
+index. There is a regression test asserting the failure mode.
+
+### Short-interest factor and the trial log (2026-08-10, schema v20/v21)
+
+**New `short` factor** from FINRA Reg SHO daily short-volume files — free, no
+auth, 1.13M rows over 2,094 sessions and 690 tickers. Pre-registered before the
+data was downloaded, including three recorded reasons to expect a null.
+
+Construction fixed from Boehmer/Jones/Zhang, not tuned: `sfrac` = short ÷ total
+volume, 5-day formation, 20-day hold, sign negative. Flow rather than level,
+because the paper finds flow drives out short interest in 13 of 15 reversed
+sorts.
+
+Result: **NW t = 1.87**, coverage 79%, positive in 58% of months — third
+strongest, correct sign, nowhere near the bar. The pre-registered falsifier had
+two limbs because IC alone could not settle it, and both are now evaluated: the
+t-stat is not zero, and *both* tails carry (+0.24% / −0.22% per month). That
+departs from the paper, whose spread is almost entirely its long leg.
+
+Two properties of the source, both now in the module docstring:
+
+- The CDN answers **403, not 404**, for a file it is not serving, so a Sunday
+  and a 2017 session are identical at the HTTP layer. Treating 403 as fatal
+  aborted the first backfill on its first weekend.
+- **The archive is rolling, about eight years.** ~2018-08 onward returns 200;
+  2018-07-02 and earlier returns 403. The factor cannot reach the 2017 backtest
+  start and has zero coverage for the first ~19 months, so its t-stat sits on a
+  shorter, later sample than every other factor.
+
+**`research_trials`** logs every backtest with its test count, factor set, best
+t-stat, mean |ρ| and git sha. Bailey & López de Prado's central claim is that a
+backtest whose author cannot say how many trials were attempted is worthless,
+and Harvey & Liu's haircut takes the count as a literal input. It is reported as
+a **lower bound** — logging began 2026-08-10 and months of prior runs are
+unrecoverable, so presenting it as N would understate the haircut, which is the
+exact failure the counter exists to prevent.
+
+### The promotion bar is derived, not asserted (2026-08-10)
+
+`t >= 3.0` was a hardcoded literal described as Bonferroni-corrected. Neither
+half held up. 3.0 is Harvey/Liu/Zhu's *headline recommendation* — their own
+Bonferroni benchmark for the 316-factor zoo is 3.78 — and **both Harvey papers
+recommend BHY (false discovery rate)**, not Bonferroni.
+
+`significance.py` now derives the bar from each run's actual test count, with
+**two bars assigned by family in code ahead of the run** so the choice can never
+be made after seeing a result:
+
+| Family | Bar | Applies to |
+|---|---:|---|
+| Own-family BHY | 3.24 | congress, fund, insider, activism, short |
+| Zoo-draw BHY | 4.21 | mom, trend, vol, value, quality, pead |
+
+Factors lifted from the published literature inherit its multiple-testing
+burden; CORTEX's own alt-data signals are scored against CORTEX's own family. A
+single global constant cannot be right for both.
+
+Note the direction: **BHY with the Yekutieli dependence correction is stricter
+than Bonferroni for a lone discovery** (3.24 vs 2.89), because the rank-1
+critical value carries a factor of c(N). BHY is the more lenient procedure only
+once several tests are already significant. Adding the short factor moved the
+own-family bar 3.21 → 3.24 — every new idea raises the bar for all of them.
+
+**Promotion target settled: standalone, not composite.** The two disagree —
+log-scaled congress is worse standalone and better in the composite — and it
+resurfaced on every construction change. The factor is the empirical claim; the
+composite is packaging, and it has free parameters an ablation does not.
+
+Three new diagnostics, none of which move a result:
+
+- **Size split** — each factor's NW t within the larger and smaller half of the
+  cross-section, split at its own median dollar volume.
+- **Tail decomposition** — mean monthly excess return of each factor's top and
+  bottom decile. An IC is a rank correlation and cannot say which *end* carries
+  a factor.
+- **Direction homogeneity** — percent of months with positive IC, per MacKinlay
+  via Katz et al. Result: fund 61%, congress 59%, short 58%, everything else
+  50–54%, i.e. coin flips.
+- **Mean |ρ|** across the factor-IC matrix (0.189), the haircut input that could
+  not previously be computed.
+
+### Three pre-registered construction changes (2026-08-10)
+
+Hypotheses and falsifiers were written to the vault **before** any run, and each
+change was evaluated separately so the deltas stay attributable.
+
+**Fund: asymmetric buy/sell signing.** Agarwal puts 13F acquisitions at +7.06%
+DGTW/12m (t=3.95) against disposals at +2.94% (t=1.42); Lakonishok finds the
+same asymmetry for insiders. CORTEX signed them ±1. Two pre-registered values,
+not a sweep:
+
+| `sell_weight` | fund | composite | L/S net |
+|---|---:|---:|---:|
+| 1.0 (old) | 2.42 | 1.65 | 0.78 |
+| **0.5 (kept)** | **2.62** | **1.90** | **1.21** |
+| 0.0 | 1.73 | 1.73 | 1.25 |
+
+0.5 is the Agarwal ratio, taken from the paper rather than fitted. The interior
+optimum is the shape theory predicts: sells carry some information but less than
+buys, so both extremes are wrong.
+
+**Insider: distinct-filer count and size-relative dollar rank.** Lakonishok's
+strongest screen is built on the number of distinct insiders buying, which
+CORTEX ignored despite storing `filer_cik`; and raw `log1p(value_usd)`
+mechanically favours mega-caps where LL use dollars only as a within-size rank.
+Insider −0.35 → −0.19: directionally as predicted, and still dead — which is
+what the pre-registration recorded as the honest prior, because LL find the
+effect is entirely small-cap.
+
+**Congress log scale: tested and reverted.** Moving raw notional to `log1p` for
+consistency with the other flow loaders collapsed congress 1.72 → 1.13, firing
+the pre-registered falsifier. The signal genuinely lives in a handful of very
+large disclosures. Raw notional stays — now a deliberate evidence-backed choice
+rather than an accident — but the factor is far more fragile than its t-stat
+suggests. Standing tension, recorded not resolved: log-scaled congress is worse
+standalone and better in the composite (1.98 vs 1.83), replicated on two data
+vintages.
+
+### Congress was Senate-only for 2017–2025 (2026-08-10)
+
+Two compounding defects. The House PTR backfill had **never been run**, so all
+967 House rows were dated 2026. Backfilling added 13,584 trades — and the
+congress factor did not move by a single decimal.
+
+Reason: `_congress_sign` understood only Senate eFD's English words
+("Purchase", "Sale (Full)"). House PTRs carry SEC letter codes — P (6,689),
+S (4,583), S (partial) (2,113) — all of which returned 0. Roughly **14,300 of
+14,551 House rows never became events.**
+
+Congress events 12.6k → 23.2k, coverage 33% → 61%, and the factor **2.24 →
+1.72**. The halving is what Ziobrowski et al. (2011) predict: the House effect
+is weaker than the Senate's (55 vs 85 bps/month, attributed to power dilution),
+so pooling dilutes. **Every congress figure before this — 2.24, 2.36, 2.59 —
+was a Senate number wearing a congress label.**
+
+Parsing order is asserted in tests: the leading token is tested as a code first,
+because a bare "s" otherwise falls through to the substring test and "p" would
+match the "partial" in "S (partial)".
+
+### Audit: event yield and declared ingest filters (2026-08-10)
+
+Every existing check in `audit.py` is row-level — is what we stored well-formed?
+None asked whether the **loaders can read it**, which is the question that
+mattered. 71,958 13F EXIT rows produced 0 events; 14,551 House rows produced
+~247. Both were invisible to row-level checks and are glaring in a yield column.
+
+Current: congress 88.4%, fund 85.2% (unpriceable EXITs), insider 100%, activism
+100%. Reported as a ratio, not pass/fail — a low yield can be legitimate.
+
+Event yield covers the storage→scoring seam. Nothing covers source→storage,
+because those rows never arrive, so the audit now **declares each source's
+ingest-time filters** — `insider_buys` holding only P codes is the live example,
+and it is why Lakonishok's net purchase ratio is uncomputable.
+
+`sources/house.py` also now counts **scanned** filings separately from **empty**
+ones. Those have opposite remedies — one is recoverable by enabling OCR, the
+other is nothing to recover — and conflating them made the coverage gap
+unmeasurable. Measured for 2024: 442 PTRs → 154 with trades, 240 empty, 48
+scanned, 0 failures. So OCR on Railway recovers ~11%, not the majority.
+
 ### Every 13F EXIT was being dropped from the fund factor (2026-08-10)
 
 `_load_fund_events` sized every event off `fund_holdings.value`. An EXIT closes
