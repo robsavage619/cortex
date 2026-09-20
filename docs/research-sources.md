@@ -30,7 +30,7 @@ Three things are deliberately not in it, and the reasons are journaled in
   and the `candidates` table stores `z_sharpe`, both marked display-only in code.
 
 `value` is earnings yield alone, not a P/E and P/B and EV/EBITDA composite.
-`quality` is ROE alone, not gross profitability and ROE and leverage. Earlier
+`quality` is ROE alone, not gross profitability and ROE and debt-to-equity. Earlier
 versions of this list described the wider composites; they were never built.
 
 ## Papers, by factor
@@ -121,7 +121,7 @@ reads -1.58 on 15% coverage, the weakest evidence base in the model.
 | Grinold, R. C., & Kahn, R. N. (1999). *Active Portfolio Management*. | Combining signals; the sensibleness guard that says a fix which lowers a t-statistic is the credible kind. |
 | Qian, E. E., Hua, R. H., & Sorensen, E. H. (2007). *Quantitative Equity Portfolio Management*. | Cross-sectional ranking and factor-composite construction, which is the method used here. |
 | Ilmanen, A. (2011). *Expected Returns*. | Why equal weighting beats fitted weights. The three blocks are equal-weighted for this reason. |
-| Berkin, A. L., & Swedroe, L. E. (2016). *Your Complete Guide to Factor-Based Investing*. | Persistence, pervasiveness and robustness as durability tests. |
+| Berkin, A. L., & Swedroe, L. E. (2016). *Your Complete Guide to Factor-Based Investing*. | Their five durability tests for a factor: persistence, pervasiveness, robustness, investability, intuitiveness.  |
 
 ## Caveat carried into the product
 
