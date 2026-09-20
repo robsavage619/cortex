@@ -68,10 +68,27 @@ Every credential lives in Railway Variables: `CORTEX_AUTH_USERS`,
 `CORTEX_ALERT_WEBHOOK` / `CORTEX_BACKUP_S3_URI`. Nothing is read from a file in the
 repo.
 
-This file previously contained a plaintext production password. It was removed on
-2026-07-16 and the credential was rotated rather than rewriting git history,
-because the repository is private. If this repository is ever made public, a full
-`git filter-repo` history purge is mandatory first.
+**The "because the repo is private" justification has expired.** The predecessor
+of this file (`HANDOFF.md`) once contained a plaintext production password. It
+was removed on 2026-07-16 and the credential was rotated rather than rewriting
+git history, on the stated grounds that the repository was private. As of
+2026-09-19 `gh repo view` reports `robsavage619/cortex` as **PUBLIC**, so that
+condition no longer holds and the deferred `git filter-repo` purge is now
+outstanding rather than conditional.
+
+Scope check run 2026-09-19, for whoever picks this up:
+
+- A pattern scan for secret-shaped assignments across every reachable commit in
+  `*.md`, `*.py`, `*.json`, `*.toml`, `*.ts` and `*.tsx` returned only
+  `os.environ.get("ANTHROPIC_API_KEY")` and variable references such as
+  `password=_auth_pass`. No literal value was found.
+- The `HANDOFF.md` blob at `b97afa1` names a Railway variable, not its value.
+- `.env` has never been committed and is matched by `.gitignore:151`. The DuckDB
+  store and `.coverage` are untracked.
+
+That scan only matches the shapes it was given, so it is evidence rather than a
+clearance. The rotated credential is dead either way; the open question is
+whether to purge history now that the premise for deferring it is gone.
 
 ## Token spend is gated to production
 
