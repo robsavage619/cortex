@@ -1,3 +1,11 @@
+> **Historical record, kept as written.** This is the audit trail for the
+> 2026-07-06 data-integrity remediation, captured against schema v15 to v17. The
+> bottom line below ("none clear t>=3.0") reflects the hardcoded bar in force at
+> the time. The bar is now derived per run from the test count (see
+> [../evaluation.md](../evaluation.md)), and every factor number here has since
+> moved. Nothing in this file is current; it is here because the before/after
+> deltas are the evidence for the fixes.
+
 # Remediation Audit Baseline — 2026-07-06
 
 Output of `uv run cortex audit-integrity` against the live DuckDB

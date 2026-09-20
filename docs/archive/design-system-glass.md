@@ -1,3 +1,10 @@
+> **Superseded, kept for history.** This describes the original "glass premium"
+> visual language: Inter, 16px radii, translucent cards over `backdrop-blur`, a
+> 240px sidebar, shadcn/ui and Tremor. The portal was rebuilt as a terminal-style
+> instrument panel before 2026-08. None of the tokens below match `web/src/index.css`
+> today, and neither shadcn/ui nor Tremor is in `web/package.json`. For the live
+> contract see [../design-system.md](../design-system.md).
+
 # CORTEX Portal — Design System (Glass Premium)
 
 The visual contract for the `web/` React portal. Any agent generating UI for this
