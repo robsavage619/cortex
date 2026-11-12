@@ -226,10 +226,14 @@ def _load_fundamentals(db_path: Path) -> list[_Fundamental]:
 def _fundamental_asof(
     funds: list[_Fundamental], as_of: date
 ) -> dict[str, _Fundamental]:
-    """Latest fundamental per ticker filed on or before as_of (point-in-time)."""
+    """Latest fundamental per ticker filed strictly before as_of.
+
+    Strict, because filings commonly land after the close: one dated as_of
+    could not have informed a trade at as_of's close.
+    """
     latest: dict[str, _Fundamental] = {}
     for f in funds:  # sorted ascending by filing_date
-        if f.filing_date <= as_of:
+        if f.filing_date < as_of:
             latest[f.ticker] = f
         else:
             break
@@ -284,12 +288,13 @@ def _load_short_volume(db_path: Path) -> dict[date, dict[str, float]]:
 def _short_interest_asof(
     by_session: dict[date, dict[str, float]], as_of: date, window: int = 5
 ) -> dict[str, float]:
-    """Mean sfrac over the last `window` published sessions on or before as_of.
+    """Mean sfrac over the last `window` published sessions before as_of.
 
     Five days is the paper's formation window and is fixed, not swept.
-    Point-in-time by construction: sessions after as_of are never consulted.
+    Strictly before: FINRA publishes a session's file that evening, after the
+    close a trade dated as_of would have used.
     """
-    sessions = sorted(d for d in by_session if d <= as_of)[-window:]
+    sessions = sorted(d for d in by_session if d < as_of)[-window:]
     if not sessions:
         return {}
     acc: dict[str, list[float]] = {}
@@ -449,11 +454,15 @@ def _flow_score(
     halflife: float,
     window_days: int,
 ) -> dict[str, float]:
-    """Decayed signed net flow per ticker, using only events disclosed by as_of."""
+    """Decayed signed net flow per ticker, from events disclosed before as_of.
+
+    Strictly before: 13Fs and PTRs are commonly filed after the close, so an
+    event dated as_of could not have informed a trade at as_of's close.
+    """
     floor = as_of - timedelta(days=window_days)
     out: dict[str, float] = {}
     for ev in events:
-        if ev.when > as_of or ev.when < floor:
+        if ev.when >= as_of or ev.when < floor:
             continue
         age = (as_of - ev.when).days
         decay = 0.5 ** (age / halflife)
@@ -475,6 +484,22 @@ def _zscore(values: np.ndarray) -> np.ndarray:
         return np.where(mask, 0.0, np.nan)
     z = (values - mu) / sd
     return np.clip(z, -_Z_CLIP, _Z_CLIP)
+
+
+def _sector_demean(fwd: np.ndarray, sector_ids: np.ndarray) -> np.ndarray:
+    """Forward returns less each name's sector mean that month.
+
+    A raw-return IC rewards a signal for tilting toward whichever sector
+    rallied, which is noise for a stock-selection claim. Unlabelled names
+    (id -1) and sectors with fewer than 5 valid names fall back to the
+    cross-section mean, which leaves their rank position as it was.
+    """
+    out = fwd - np.nanmean(fwd)
+    for s in np.unique(sector_ids[sector_ids >= 0]):
+        m = (sector_ids == s) & ~np.isnan(fwd)
+        if m.sum() >= 5:
+            out[m] = fwd[m] - fwd[m].mean()
+    return out
 
 
 def _spearman_ic(signal: np.ndarray, fwd: np.ndarray) -> float | None:
@@ -590,6 +615,10 @@ class BacktestReport:
     # members we could price. <1.0 means residual delisting bias remains.
     universe_coverage_mean: float = 0.0
     universe_coverage_min: float = 0.0
+    # Share of each month's scored names carrying a GICS label; the rest are
+    # demeaned against the whole cross-section instead of their sector.
+    sector_label_coverage_mean: float = 0.0
+    sector_label_coverage_min: float = 0.0
     # Cap-weighted reality check ("would I have just bought the index?").
     # The EW benchmark stays the fair null — the strategy itself is EW.
     spy_cagr: float | None = None
@@ -747,7 +776,11 @@ def run_backtest(
     top_decile: float = 0.10,
 ) -> BacktestReport:
     """Run the point-in-time backtest. Prices come from the DuckDB cache."""
-    from cortex.sources.universe import sp500_members_asof, sp500_union
+    from cortex.sources.universe import (
+        sp500_members_asof,
+        sp500_sectors,
+        sp500_union,
+    )
 
     # One extra year of history for the 252d lookback warmup.
     hist_start = date(start_year - 1, 1, 1)
@@ -787,6 +820,9 @@ def run_backtest(
     cols = list(closes.columns)
     col_idx = {t: i for i, t in enumerate(cols)}
     price_arr = closes.to_numpy()  # [days, names]
+    sector_of = sp500_sectors()
+    sector_code = {s: n for n, s in enumerate(sorted(set(sector_of.values())))}
+    sector_ids = np.array([sector_code.get(sector_of.get(t, ""), -1) for t in cols])
     log_px = np.log(price_arr)
     daily_idx: Any = closes.index
     # Dollar volume is the size proxy for the large/small IC split below.
@@ -852,6 +888,7 @@ def run_backtest(
     decile_acc: list[list[float]] = [[] for _ in range(10)]
     ls_sets: list[tuple[set[int], set[int]]] = []
     universe_cov: list[float] = []
+    sector_cov: list[float] = []
     spy_col = col_idx.get("SPY")
 
     for k in range(len(rebal) - 1):
@@ -966,6 +1003,10 @@ def run_backtest(
         if bench_mask.sum() < 50:
             continue
         bench_rets.append(float(np.nanmean(fwd[bench_mask])))
+        # Every IC below is scored against sector-demeaned returns; portfolio
+        # returns (top decile, deciles, long-short) stay raw.
+        fwd_ic = _sector_demean(fwd, sector_ids)
+        sector_cov.append(float((sector_ids[bench_mask] >= 0).mean()))
         if spy_col is not None:
             spy_fwd = price_arr[j, spy_col] / p_now[spy_col] - 1.0
             if np.isfinite(spy_fwd):
@@ -993,7 +1034,7 @@ def run_backtest(
             (zmom, ztrend, zvol, zval, zqual, zcong, zfund, zactiv, zinside, zshort),
             strict=True,
         ):
-            ic = _spearman_ic(z, fwd)
+            ic = _spearman_ic(z, fwd_ic)
             if ic is not None:
                 fac_ic[fk].append(ic)
             fac_ic_series[fk].append(ic if ic is not None else math.nan)
@@ -1006,7 +1047,7 @@ def run_backtest(
                 if not mask.any():
                     continue
                 sub = _spearman_ic(
-                    np.where(mask, z, np.nan), np.where(mask, fwd, np.nan)
+                    np.where(mask, z, np.nan), np.where(mask, fwd_ic, np.nan)
                 )
                 if sub is not None:
                     acc[fk].append(sub)
@@ -1014,7 +1055,7 @@ def run_backtest(
         # Per-variant IC + top-decile returns.
         for vk in variant_keys:
             sig = sigs[vk]
-            ic = _spearman_ic(sig, fwd)
+            ic = _spearman_ic(sig, fwd_ic)
             if ic is not None:
                 var_ic[vk].append(ic)
             net, turn, top = _top_decile_return(sig, fwd, prev[vk], top_decile)
@@ -1154,6 +1195,8 @@ def run_backtest(
         n_tickers_priced=n_priced,
         universe_coverage_mean=cov_mean,
         universe_coverage_min=cov_min,
+        sector_label_coverage_mean=float(np.mean(sector_cov)) if sector_cov else 0.0,
+        sector_label_coverage_min=float(np.min(sector_cov)) if sector_cov else 0.0,
         spy_cagr=spy_cagr,
         spy_sharpe=spy_sharpe,
     )

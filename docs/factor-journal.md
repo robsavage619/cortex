@@ -22,6 +22,9 @@ feeding the model signal it had not earned.
 | 2026-08-10d | House backfill and the transaction-code defect | **1.72** | 2.62 | 1.83 | 1.41 | 1.02 |
 | 2026-08-10e | short-interest factor added | 1.72 | 2.62 | 1.83 | 1.41 | 1.02 |
 | 2026-09-19 | no code change, one more month of data | 1.74 | 2.66 | 1.67 | 1.19 | 0.82 |
+| 2026-11-11 | no code change, two more months of data | 1.63 | 2.45 | 1.67 | 1.21 | 0.83 |
+| 2026-11-11a | disclosures gated strictly before the rebalance date | 1.60 | 2.45 | 1.65 | 1.22 | 0.85 |
+| 2026-11-11b | IC scored on sector-demeaned returns | 1.55 | **2.22** | 1.86 | 1.22 | 0.85 |
 
 All figures are Newey-West HAC t-statistics on the monthly information
 coefficient. The last row is a re-measurement, not a change: the backtest window
@@ -191,6 +194,64 @@ A `research_trials` table was added in the same change, logging the cumulative
 trial count. It reads 104 since instrumentation began and is a lower bound, since
 runs before it are unrecorded. That count is the Harvey-Liu haircut input nobody
 records.
+
+## 2026-11-11: same-day lookahead, and the IC re-based to sector-neutral returns
+
+Three rows, all on one data vintage (window 2017-01-31 to 2026-10-30, T = 117), so
+each delta belongs to one cause. Hypotheses were written to the vault before either
+run.
+
+**Two more months of data, no code change.** fund 2.66 -> 2.45, congress 1.74 ->
+1.63, composite unchanged at 1.67. The fund factor lost 0.21 to nothing but the
+calendar. That is larger than either code change below moved it, and it is the
+noise floor again.
+
+**11a: disclosures gated strictly before the rebalance date.** congress 1.63 ->
+1.60, fund 2.45 -> 2.45, short 1.88 -> 1.94, quality 1.08 -> 1.03, value 0.22 ->
+0.14, composite 1.67 -> 1.65. `_flow_score`, `_short_interest_asof` and
+`_fundamental_asof` all admitted a record dated on the rebalance day, and the
+backtest trades at that day's close. 13Fs, PTRs, 10-Qs and FINRA's daily file
+commonly land after it. The moves are small, as predicted. Short was predicted to
+fall and rose slightly; at this size that is not worth interpreting. Live discovery
+shares the three functions, so it now ignores same-day filings too.
+
+**11b: IC scored on sector-demeaned returns.** Every IC is now measured against
+each name's forward return less its GICS sector's equal-weight mean that month.
+Portfolio returns stay raw, which is why the long-short columns do not move.
+
+| factor | before | after |
+|---|---:|---:|
+| short | 1.94 | **2.88** |
+| fund | 2.45 | 2.22 |
+| congress | 1.60 | 1.55 |
+| composite | 1.65 | 1.86 |
+| quality | 1.03 | 0.17 |
+| trend | 0.53 | 0.98 |
+| mom | 0.33 | 0.45 |
+| value | 0.14 | 0.00 |
+| vol | -0.48 | 0.38 |
+| insider | -0.41 | -1.04 |
+| activism | -1.89 | -1.84 |
+
+The prediction was that fund, congress and short would all rise. One of three did.
+Fund's mean IC fell from 0.0176 to 0.0146: about a sixth of what it had been
+credited with was sector tilt. It stayed above the pre-registered falsifier of
+2.0, so the stock-selection reading survives, weaker. Quality lost nearly all of
+its 1.03, which says that number was mostly a sector effect. Short is now the
+strongest factor and the closest to its bar (3.24), on the shortest sample of any
+factor, since FINRA's archive starts in 2018-08.
+
+The sector-neutral figure replaces the raw one as the gate statistic. That was
+fixed before the run, so that the choice could not follow the result. **Rows from
+11b on are not comparable with the rows above them.**
+
+Limits accepted ahead of the run: sector labels are today's GICS from the vendored
+`data/reference/sp500_sectors.csv`, not point-in-time, and names that left the
+index before the snapshot have none. Label coverage is a mean of 90% of scored
+names and 83% in the worst month; unlabelled names are demeaned against the whole
+cross-section. `run_congress_oos` still scores raw returns.
+
+Nothing clears the bar.
 
 ## Standing tensions, unresolved
 

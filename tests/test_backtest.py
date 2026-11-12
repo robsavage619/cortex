@@ -9,10 +9,13 @@ import pytest
 from cortex.backtest import (
     _amount_midpoint,
     _congress_sign,
+    _Event,
     _factor_corr,
+    _flow_score,
     _Fundamental,
     _fundamental_asof,
     _nw_tstat,
+    _sector_demean,
     _series_stats,
     _spearman_ic,
     _zscore,
@@ -64,7 +67,7 @@ def test_congress_sign_ignores_unparseable():
 
 
 def test_fundamental_asof_is_point_in_time():
-    """Only filings disclosed on/before as_of count; latest per ticker wins."""
+    """Only filings disclosed before as_of count; latest per ticker wins."""
     funds = [
         _Fundamental("AAPL", dt.date(2023, 11, 1), eps_diluted=6.0, roe=1.5),
         _Fundamental("AAPL", dt.date(2024, 11, 1), eps_diluted=6.1, roe=1.6),
@@ -77,8 +80,21 @@ def test_fundamental_asof_is_point_in_time():
 
     # As of end-2024: both companies' latest filings are public.
     asof_end = _fundamental_asof(funds, dt.date(2024, 12, 1))
-    assert asof_end["AAPL"].eps_diluted == 6.1  # latest ≤ as_of
+    assert asof_end["AAPL"].eps_diluted == 6.1  # latest < as_of
     assert asof_end["MSFT"].eps_diluted == 11.0
+
+    # Filed on as_of itself: after-close filings cannot inform that day's trade.
+    same_day = _fundamental_asof(funds, dt.date(2024, 11, 1))
+    assert same_day["AAPL"].eps_diluted == 6.0
+
+
+def test_flow_score_excludes_events_disclosed_on_as_of():
+    events = [
+        _Event("AAPL", dt.date(2024, 5, 30), 1.0),
+        _Event("AAPL", dt.date(2024, 5, 31), 100.0),  # disclosed on as_of
+    ]
+    score = _flow_score(events, dt.date(2024, 5, 31), halflife=180.0, window_days=365)
+    assert score["AAPL"] == pytest.approx(0.5 ** (1 / 180.0))
 
 
 def test_load_fundamentals_breaks_filing_date_ties_by_period(tmp_path):
@@ -353,3 +369,15 @@ def test_factor_corr_recovers_correlation_and_gates_overlap():
     assert fc.matrix[idx["a"]][idx["b"]] == pytest.approx(1.0)
     assert fc.matrix[idx["a"]][idx["c"]] == pytest.approx(-1.0)
     assert fc.matrix[idx["a"]][idx["d"]] is None
+
+
+def test_sector_demean_removes_sector_moves_and_keeps_unlabelled_ranks():
+    # Sector 0 rallied +10% as a block; inside it only the last name stood out.
+    fwd = np.array([0.10] * 4 + [0.15] + [0.00] * 4 + [0.05] + [0.02, np.nan])
+    ids = np.array([0] * 5 + [1] * 5 + [-1, -1])
+    out = _sector_demean(fwd, ids)
+    assert out[:4] == pytest.approx([-0.01] * 4)
+    assert out[4] == pytest.approx(0.04)
+    assert out[9] == pytest.approx(0.04)  # same within-sector edge, same score
+    assert out[10] == pytest.approx(0.02 - np.nanmean(fwd))  # market-demeaned
+    assert np.isnan(out[11])

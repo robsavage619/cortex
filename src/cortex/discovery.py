@@ -192,7 +192,7 @@ def _pit_fundamentals(
     """Point-in-time earnings yield and ROE from the ``fundamentals`` table.
 
     Same source and gating the backtest uses (latest filing with
-    filing_date ≤ as_of) — replaces the old yf.Ticker.info shortcut, which
+    filing_date < as_of) — replaces the old yf.Ticker.info shortcut, which
     served numbers the backtest never validated.
     """
     from cortex.backtest import _fundamental_asof, _load_fundamentals
@@ -213,7 +213,7 @@ def _pit_fundamentals(
             covered += 1
         out[ticker] = {"earnings_yield": earnings_yield, "roe": roe}
     log.info(
-        "Fundamentals (point-in-time, filing_date ≤ %s): %d/%d tickers covered",
+        "Fundamentals (point-in-time, filing_date < %s): %d/%d tickers covered",
         as_of,
         covered,
         len(tickers),

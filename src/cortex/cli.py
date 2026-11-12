@@ -693,6 +693,11 @@ def _cmd_backtest(args: argparse.Namespace) -> None:
         f"{rep.universe_coverage_mean:.0%}, worst month {rep.universe_coverage_min:.0%}"
     )
     print("  (the gap is residual delisting bias — measured, not hidden).")
+    print(
+        f"  ICs are scored on sector-demeaned returns; GICS label coverage mean "
+        f"{rep.sector_label_coverage_mean:.0%}, worst month "
+        f"{rep.sector_label_coverage_min:.0%} (unlabelled names: market-demeaned)."
+    )
     print("  Net 10bps/side, rf=0. Value/quality via point-in-time EDGAR filings.")
     print("=" * 80)
 

@@ -267,6 +267,24 @@ def _membership_history(path: Path | None = None) -> list[tuple[date, frozenset[
     return out
 
 
+@lru_cache(maxsize=1)
+def sp500_sectors(path: Path | None = None) -> dict[str, str]:
+    """Return {ticker: GICS sector} from the vendored current-constituents CSV.
+
+    Not point-in-time and silent on names that left the index before the
+    snapshot; provenance and limits are in the file's '#' header.
+    """
+    import csv
+
+    target = path or _HISTORY_CSV.with_name("sp500_sectors.csv")
+    with target.open(newline="") as fh:
+        reader = csv.DictReader(line for line in fh if not line.startswith("#"))
+        out = {row["ticker"]: row["sector"] for row in reader}
+    if not out:
+        raise ValueError(f"empty sp500 sector map: {target}")
+    return out
+
+
 def sp500_members_asof(as_of: date) -> frozenset[str]:
     """Return S&P 500 membership as of a date (most recent snapshot ≤ date).
 

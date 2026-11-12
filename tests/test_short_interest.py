@@ -145,8 +145,23 @@ def test_short_interest_asof_averages_the_formation_window(tmp_path):
         ],
     )
     by_session = _load_short_volume(db)
-    asof = _short_interest_asof(by_session, dt.date(2025, 8, 12))
+    asof = _short_interest_asof(by_session, dt.date(2025, 8, 13))
     assert asof["AAPL"] == pytest.approx(0.30)
+
+
+def test_short_interest_asof_excludes_the_as_of_session(tmp_path):
+    """FINRA publishes after the close, so as_of's own session is lookahead."""
+    db = tmp_path / "same.db"
+    _seed(
+        db,
+        [
+            ("AAPL", dt.date(2025, 8, 11), 20, 100),
+            ("AAPL", dt.date(2025, 8, 12), 40, 100),
+        ],
+    )
+    by_session = _load_short_volume(db)
+    asof = _short_interest_asof(by_session, dt.date(2025, 8, 12))
+    assert asof["AAPL"] == pytest.approx(0.20)
 
 
 def test_short_interest_asof_uses_only_the_last_n_sessions(tmp_path):
@@ -159,7 +174,7 @@ def test_short_interest_asof_uses_only_the_last_n_sessions(tmp_path):
     )
     by_session = _load_short_volume(db)
     # 6 sessions exist; only the last 5 count, so the all-short early day drops out
-    asof = _short_interest_asof(by_session, dt.date(2025, 8, 8), window=5)
+    asof = _short_interest_asof(by_session, dt.date(2025, 8, 9), window=5)
     assert asof["AAPL"] < 1.0
 
 
