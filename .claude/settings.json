@@ -9,5 +9,14 @@
       "Bash(pdftotext *)"
     ],
     "deny": []
+  },
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          { "type": "command", "command": "command -v uv >/dev/null || exit 0; uv run --no-sync ruff check --no-cache . 1>&2 || exit 2" }
+        ]
+      }
+    ]
   }
 }
